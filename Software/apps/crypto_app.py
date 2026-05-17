@@ -242,7 +242,7 @@ class CryptoApp:
     def __init__(self, universo):
         self.universo      = universo
         self.ultimo_update = 0
-        self.delay         = 2
+        self.delay         = 1
         self.ativo         = False
         self.ids_cripto    = {}
         self.precos        = {}
@@ -274,12 +274,17 @@ class CryptoApp:
             if dado["id"] in ids_para_remover:
                 self.universo.matar_dado(dado)
 
+            
+        self.universo.processar_mortes()
+
         
         self.ids_cripto.clear()
         self.pesos.clear()
         self.features_anteriores.clear()
         self.preco_anterior.clear()
         self.precos.clear()
+
+        self.universo.salvar()
 
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -380,10 +385,11 @@ class CryptoApp:
             if "candles" not in dado:
                 dado["candles"] = []
 
-            atual_time  = int(time.time())
+            atual_time = int(time.time())
             candle_time = atual_time - (atual_time % self.timeframe)
 
             if len(dado["candles"]) == 0 or dado["candles"][-1]["time"] != candle_time:
+                # ⭐ NOVO CANDLE: começa com valores reais (sem spread artificial)
                 dado["candles"].append({
                     "time":  candle_time,
                     "open":  preco,
@@ -396,6 +402,13 @@ class CryptoApp:
                 c["high"]  = max(c["high"], preco)
                 c["low"]   = min(c["low"],  preco)
                 c["close"] = preco
+
+                # Spread mínimo visível: 0.05% do preço
+                if c["high"] - c["low"] < preco * 0.0005:
+                    spread = preco * 0.0005
+                    mid = (c["high"] + c["low"]) / 2
+                    c["high"] = mid + spread / 2
+                    c["low"]  = mid - spread / 2
 
             if len(dado["candles"]) > 300:
                 dado["candles"].pop(0)
@@ -645,6 +658,7 @@ class CryptoApp:
 
     def loop_api(self):
         while self.rodando_api:
+            print("[CryptoApp] Loop API rodando...")
             try:
                 for moeda in list(self.ids_cripto.keys()):
                     preco = pegar_preco(moeda)

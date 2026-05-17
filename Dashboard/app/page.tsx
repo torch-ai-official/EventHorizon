@@ -1,12 +1,10 @@
 "use client"
 
-import { useState, useMemo } from "react"
-import { Atom, LayoutDashboard, Grid3X3, Terminal as TerminalIcon, Wifi, WifiOff, Wrench } from "lucide-react"
+import { useState, useMemo, useCallback } from "react"
+import { LayoutDashboard, Wifi, WifiOff, TrendingUp } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { DashboardTab } from "@/components/tabs/dashboard-tab"
-import { AppsTab } from "@/components/tabs/apps-tab"
-import { TerminalTab } from "@/components/tabs/terminal-tab"
-import { ToolsTab } from "@/components/tabs/tools-tab"
+import { CryptoApp } from "@/components/apps/crypto-app"
 import { useApiSimulation } from "@/hooks/use-api-simulation"
 import { cn } from "@/lib/utils"
 
@@ -24,10 +22,17 @@ export default function UniverseOS() {
     createUnit,
     sendPulse,
     togglePause,
-    executeCommand
+    executeCommand,
+    refreshUnits,
+    pausePolling,   // ⭐ NOVO - pausa o polling
+    resumePolling,  // ⭐ NOVO - retoma o polling
+    clearUnits      // ⭐ NOVO - limpa as unidades crypto do estado
   } = useApiSimulation()
 
   const [startTime] = useState(() => new Date())
+  
+  // ⭐ Estado para forçar re-render do CryptoApp
+  const [refreshKey, setRefreshKey] = useState(0)
 
   const connectionStatus = useMemo(() => {
     if (isConnected) {
@@ -43,6 +48,29 @@ export default function UniverseOS() {
       className: "text-red-400 border-red-500/30 bg-red-500/10"
     }
   }, [isConnected, error])
+
+  // Filtra apenas unidades crypto (que têm symbol ou tipo crypto)
+  const cryptoUnits = useMemo(() => {
+    return units.filter(u => u.symbol || u.tipo === "crypto")
+  }, [units, refreshKey])
+
+  // ⭐ Função para forçar refresh dos dados
+  const handleRefresh = useCallback(async () => {
+    // Força o componente CryptoApp a recriar os dados
+    setRefreshKey(prev => prev + 1)
+    
+    // Atualiza os dados
+    if (refreshUnits) {
+      await refreshUnits()
+    }
+    
+    // Executa comando refresh no backend
+    try {
+      await executeCommand("refresh")
+    } catch (error) {
+      console.error("Refresh error:", error)
+    }
+  }, [refreshUnits, executeCommand])
 
   if (!mounted) {
     return (
@@ -69,12 +97,14 @@ export default function UniverseOS() {
         <header className="mb-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-neon-blue/20 border border-neon-blue/30">
-                <Atom className="h-5 w-5 text-neon-blue" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-neon-blue to-neon-cyan/80">
+                <TrendingUp className="h-5 w-5 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-foreground">Universe OS</h1>
-                <p className="text-xs text-muted-foreground">Sistema de Simulação v2.0</p>
+                <h1 className="text-xl font-bold bg-gradient-to-r from-neon-blue to-neon-cyan bg-clip-text text-transparent">
+                  TRADER AI
+                </h1>
+                <p className="text-xs text-muted-foreground">Sistema de Trading com IA Adaptativa</p>
               </div>
             </div>
 
@@ -89,7 +119,7 @@ export default function UniverseOS() {
           </div>
         </header>
 
-        {/* Main Tabs */}
+        {/* Apenas 2 abas: Dashboard e Crypto */}
         <Tabs defaultValue="dashboard" className="w-full">
           <TabsList className="mb-6 bg-secondary/50 border border-border/50 p-1">
             <TabsTrigger 
@@ -100,25 +130,11 @@ export default function UniverseOS() {
               Dashboard
             </TabsTrigger>
             <TabsTrigger 
-              value="apps"
-              className="gap-2 data-[state=active]:bg-neon-purple/20 data-[state=active]:text-neon-purple data-[state=active]:border-neon-purple/30"
+              value="crypto"
+              className="gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-neon-blue/20 data-[state=active]:to-neon-cyan/20 data-[state=active]:text-neon-cyan data-[state=active]:border-neon-cyan/30"
             >
-              <Grid3X3 className="h-4 w-4" />
-              Apps
-            </TabsTrigger>
-            <TabsTrigger 
-              value="terminal"
-              className="gap-2 data-[state=active]:bg-neon-cyan/20 data-[state=active]:text-neon-cyan data-[state=active]:border-neon-cyan/30"
-            >
-              <TerminalIcon className="h-4 w-4" />
-              Terminal
-            </TabsTrigger>
-            <TabsTrigger 
-              value="tools"
-              className="gap-2 data-[state=active]:bg-amber-500/20 data-[state=active]:text-amber-400 data-[state=active]:border-amber-500/30"
-            >
-              <Wrench className="h-4 w-4" />
-              Ferramentas
+              <TrendingUp className="h-4 w-4" />
+              Crypto Trading
             </TabsTrigger>
           </TabsList>
 
@@ -133,45 +149,25 @@ export default function UniverseOS() {
               onCreateUnit={createUnit}
               onSendPulse={sendPulse}
               onTogglePause={togglePause}
-
-              
             />
           </TabsContent>
 
-          <TabsContent value="apps" className="mt-0">
-            <AppsTab
-              isConnected={isConnected}
-              isRunning={isRunning}
-              units={units}
-              pulses={pulses}
-              totalEnergy={totalEnergy}
-              startTime={startTime}
-              onTogglePause={togglePause}
-              onCreateUnit={createUnit}
-              onSendPulse={sendPulse}
-            />
-          </TabsContent>
-
-          <TabsContent value="terminal" className="mt-0">
-            <TerminalTab
-              isConnected={isConnected}
-              onExecuteCommand={executeCommand}
-            />
-          </TabsContent>
-
-          <TabsContent value="tools" className="mt-0">
-            <ToolsTab
-              units={units}
-              pulses={pulses}
-              totalEnergy={totalEnergy}
+          <TabsContent value="crypto" className="mt-0">
+            <CryptoApp
+              key={refreshKey}
+              cryptos={cryptoUnits}
               executeCommand={executeCommand}
+              onRefresh={handleRefresh}
+              pausePolling={pausePolling}   // ⭐ PASSA para o CryptoApp
+              resumePolling={resumePolling} // ⭐ PASSA para o CryptoApp
+              clearUnits={clearUnits}     // ⭐ PASSA para o CryptoApp
             />
           </TabsContent>
         </Tabs>
 
         {/* Footer */}
         <footer className="text-center text-xs text-muted-foreground py-4 mt-6 border-t border-border/30">
-          <p>Universe OS • Sistema de Simulação Autônoma</p>
+          <p>TRADER AI • Sistema de Trading com Inteligência Adaptativa</p>
         </footer>
       </div>
     </main>

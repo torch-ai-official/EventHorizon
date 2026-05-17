@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react"
 import { createChart, CrosshairMode, LineStyle, IChartApi, ISeriesApi, UTCTimestamp, CandlestickSeries, LineSeries } from "lightweight-charts"
+import { ca } from "date-fns/locale"
 
 interface Candle {
   time: number
@@ -17,6 +18,7 @@ interface TradingChartProps {
   prediction: number
   timeframe?: number
   symbol?: string
+  isActive?: boolean
 }
 
 function safeTime(t: any): UTCTimestamp {
@@ -71,7 +73,7 @@ function calcRSI(data: Candle[], period = 14): number {
   return parseFloat((100 - 100 / (1 + rs)).toFixed(2))
 }
 
-export function TradingChart({ candles, currentPrice, prediction, timeframe = 5, symbol = "BTCUSDT" }: TradingChartProps) {
+export function TradingChart({ candles, currentPrice, prediction, timeframe = 5, symbol = "BTCUSDT", isActive = true }: TradingChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null)
@@ -103,6 +105,15 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
 
   const resetedRef = useRef<number>(0)
   const versionRef = useRef(0)
+
+  const candlesRef = useRef<Candle[]>([])
+
+  // No topo do componente, antes dos efeitos:
+  useEffect(() => {
+    candlesRef.current = candles
+  }, [candles])
+
+
 
   // ─── Build chart once ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -265,24 +276,33 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
     }
   }, []) // eslint-disable-line
 
+  useEffect(() => {
+    if (!isActive) {
+      // Cancela qualquer animação em andamento
+      if (animFrameRef.current !== null) {
+        cancelAnimationFrame(animFrameRef.current)
+        animFrameRef.current = null
+      }
+    }
+  }, [isActive])
+
   // ─── Efeito 0: reseta ao trocar timeframe ─────────────────────────────────
   useEffect(() => {
     versionRef.current += 1
-    const myVersion = versionRef.current
 
     if (animFrameRef.current !== null) {
       cancelAnimationFrame(animFrameRef.current)
       animFrameRef.current = null
     }
 
-    // Limpa todas as séries
-    candleSeriesRef.current?.setData([])
-    ema9Ref.current?.setData([])
-    ema21Ref.current?.setData([])
-    bbUpperRef.current?.setData([])
-    bbLowerRef.current?.setData([])
-    bbMidRef.current?.setData([])
-    predLineRef.current?.setData([])
+    // ⭐ NÃO LIMPA AS SÉRIES AQUI - apenas reseta as referências
+    // candleSeriesRef.current?.setData([])  // ← REMOVA ESTA LINHA
+    // ema9Ref.current?.setData([])          // ← REMOVA
+    // ema21Ref.current?.setData([])         // ← REMOVA
+    // bbUpperRef.current?.setData([])       // ← REMOVA
+    // bbLowerRef.current?.setData([])       // ← REMOVA
+    // bbMidRef.current?.setData([])         // ← REMOVA
+    // predLineRef.current?.setData([])      // ← REMOVA
 
     // Reseta refs de estado
     lastTimeRef.current = null
@@ -295,62 +315,101 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
 
   }, [timeframe])
 
-  // ─── Efeito 1: carrega histórico fechado ──────────────────────────────────
+
+    // ⭐ NOVO: Efeito 1.5 - Linha de previsão (roda sempre)
   useEffect(() => {
-    if (!candles.length || !candleSeriesRef.current) return
-    if (lastTimeRef.current !== null) return  // ← só roda quando o gráfico está limpo
+    if (!predLineRef.current || !currentPrice) return
 
     const now = Math.floor(Date.now() / 1000)
     const bucketTime = now - (now % timeframe)
-    const closedCandles = candles
-      .filter(c => c.time < bucketTime)
-      .sort((a, b) => a.time - b.time)
+    
+    smoothPredRef.current = smoothPredRef.current + PRED_ALPHA * (prediction - smoothPredRef.current)
+    const smoothedPred = smoothPredRef.current
 
-    if (closedCandles.length < 2) return
+    const futureTime = bucketTime + timeframe * 3
+    const scaleFactor = currentPrice * 0.005
+    // Escala logarítmica para movimentos percentuais
+  const predicted = currentPrice * Math.exp(smoothedPred * 0.01)  // 1% por ponto
+    
+    predLineRef.current.setData([
+      { time: safeTime(bucketTime), value: currentPrice },
+      { time: safeTime(futureTime), value: predicted },
+    ])
+  }, [currentPrice, timeframe, prediction])
 
-    candleSeriesRef.current.setData(
-      closedCandles.map(c => ({ time: safeTime(c.time), open: c.open, high: c.high, low: c.low, close: c.close }))
-    )
-
-    setRsi(calcRSI(closedCandles.length >= 15 ? closedCandles : candles))
-
-    if (candles.length >= 2) {
-      const prev = candles[candles.length - 2]
-      const last = candles[candles.length - 1]
-      setPriceChange(parseFloat((((last.close - prev.close) / prev.close) * 100).toFixed(3)))
-    }
-
-    if (ema9Ref.current) ema9Ref.current.setData(calcEMA(closedCandles, 9) as any)
-    if (ema21Ref.current) ema21Ref.current.setData(calcEMA(closedCandles, 21) as any)
-
-    if (closedCandles.length >= 20) {
-      const bb = calcBollinger(closedCandles)
-      bbUpperRef.current?.setData(bb.upper as any)
-      bbLowerRef.current?.setData(bb.lower as any)
-      bbMidRef.current?.setData(bb.mid as any)
-    }
-
-  }, [currentPrice, timeframe, resetedRef.current])
-
-  // ─── Efeito 2: anima o candle vivo a cada novo currentPrice ──────────────
+  // ─── Efeito ÚNICO: Gerencia TODOS os candles com animação ─────────────────
   useEffect(() => {
+    if (!isActive) return
+    if (!candleSeriesRef.current || !currentPrice) return
+
+     console.log("🎯 Efeito Único rodando - candles:", candles.length, "currentPrice:", currentPrice)
+
     const myVersion = versionRef.current
-
-    if (!currentPrice || !candleSeriesRef.current) return
-
-    console.log("prediction", prediction)
-
     const now = Math.floor(Date.now() / 1000)
     const bucketTime = now - (now % timeframe)
 
-    if (!bucketTime || bucketTime <= 0) return
-
-    if (lastTimeRef.current !== null && bucketTime < lastTimeRef.current) {
-      return
+    // ─── 1. Processa candles históricos (sem recriar tudo) ─────────────────
+    if (candlesRef.current.length > 0 && lastTimeRef.current === null) {
+      // Agrupa candles do backend no timeframe atual
+      const agrupados = new Map<number, Candle>()
+      
+      for (const c of candlesRef.current) {
+        const bucket = c.time - (c.time % timeframe)
+        if (bucket >= bucketTime) continue
+        
+        if (!agrupados.has(bucket)) {
+          agrupados.set(bucket, { 
+            time: bucket, 
+            open: c.open, 
+            high: c.high, 
+            low: c.low, 
+            close: c.close 
+          })
+        } else {
+          const existing = agrupados.get(bucket)!
+          existing.high = Math.max(existing.high, c.high)
+          existing.low = Math.min(existing.low, c.low)
+          existing.close = c.close
+        }
+      }
+      
+      const closedCandles = Array.from(agrupados.values()).sort((a, b) => a.time - b.time)
+      
+      if (closedCandles.length > 0) {
+        // Usa update em vez de setData para manter animação
+        candleSeriesRef.current.setData(
+          closedCandles.map(c => ({
+            time: safeTime(c.time),
+            open: c.open,
+            high: Math.max(c.open, c.high, c.close),
+            low: Math.min(c.open, c.low, c.close),
+            close: c.close,
+          }))
+        )
+        
+        setRsi(calcRSI(closedCandles.length >= 15 ? closedCandles : candlesRef.current))
+        
+        if (closedCandles.length >= 2) {
+          const prev = closedCandles[closedCandles.length - 2]
+          const last = closedCandles[closedCandles.length - 1]
+          setPriceChange(parseFloat((((last.close - prev.close) / prev.close) * 100).toFixed(3)))
+        }
+        
+        if (ema9Ref.current) ema9Ref.current.setData(calcEMA(closedCandles, 9) as any)
+        if (ema21Ref.current) ema21Ref.current.setData(calcEMA(closedCandles, 21) as any)
+        
+        if (closedCandles.length >= 20) {
+          const bb = calcBollinger(closedCandles)
+          bbUpperRef.current?.setData(bb.upper as any)
+          bbLowerRef.current?.setData(bb.lower as any)
+          bbMidRef.current?.setData(bb.mid as any)
+        }
+      }
     }
 
-    // ── Inicializa candle vivo na primeira vez ────────────────────────────
+    // ─── 2. Atualiza/Anima o candle atual ──────────────────────────────────
     if (lastTimeRef.current === null) {
+      // Primeiro preço do período
       lastTimeRef.current = bucketTime
       currentCandleRef.current = {
         time: bucketTime,
@@ -364,11 +423,11 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
       isNewCandleRef.current = true
     }
 
-    // ── Novo bucket: fecha vela anterior, abre nova ───────────────────────
+    // ─── 3. Verifica se mudou de período ──────────────────────────────────
     if (bucketTime !== lastTimeRef.current) {
+      // Fecha o candle anterior
       const prev = currentCandleRef.current
       if (prev && candleSeriesRef.current) {
-        if (versionRef.current !== myVersion) return  // ignora se timeframe mudou no meio da animação
         candleSeriesRef.current.update({
           time: safeTime(prev.time),
           open: prev.open,
@@ -377,7 +436,8 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
           close: animToRef.current,
         })
       }
-
+      
+      // Inicia novo candle
       lastTimeRef.current = bucketTime
       currentCandleRef.current = {
         time: bucketTime,
@@ -386,9 +446,9 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
         low: Math.min(animToRef.current, currentPrice),
         close: currentPrice,
       }
-      isNewCandleRef.current = true   // ← nova vela nasce colapsada
+      isNewCandleRef.current = true
     } else {
-      // ── Mesmo bucket: expande high/low ────────────────────────────────
+      // Atualiza o candle atual
       const c = currentCandleRef.current!
       currentCandleRef.current = {
         ...c,
@@ -398,7 +458,7 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
       }
     }
 
-    // ── Cancela frame anterior e começa nova interpolação ─────────────────
+    // ─── 4. Anima o candle atual ──────────────────────────────────────────
     if (animFrameRef.current !== null) {
       cancelAnimationFrame(animFrameRef.current)
       animFrameRef.current = null
@@ -409,34 +469,28 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
     animToRef.current = currentPrice
     animStartRef.current = performance.now()
     animDurationRef.current = isNewCandleRef.current ? 400 : 280
-
     const birthAnim = isNewCandleRef.current
-    isNewCandleRef.current = false   // consome o flag
+    isNewCandleRef.current = false
 
     const easeOut = (t: number) => 1 - Math.pow(1 - t, 3)
     const easeInOut = (t: number) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
 
     const tick = (timestamp: number) => {
-      if  (versionRef.current !== myVersion) return  // ignora se timeframe mudou no meio da animação
-      if (versionRef.current !== myVersion ||!candleSeriesRef.current || !currentCandleRef.current) return
+      if (versionRef.current !== myVersion) return
+      if (!candleSeriesRef.current || !currentCandleRef.current) return
 
       const elapsed = timestamp - animStartRef.current
       const t = Math.min(elapsed / animDurationRef.current, 1)
       const c = currentCandleRef.current
 
       if (birthAnim) {
-        // ── Nascimento: corpo colapsa no open e se expande até o close ──
-        // t=0 → open==close (doji mínimo), t=1 → close real
         const ease = easeInOut(t)
         const animatedClose = c.open + (currentPrice - c.open) * ease
-        // wick também cresce gradualmente
         const wickScale = ease
         const highAnim = c.open + (c.high - c.open) * wickScale
-        const lowAnim  = c.open - (c.open - c.low) * wickScale
+        const lowAnim = c.open - (c.open - c.low) * wickScale
 
-        if (versionRef.current !== myVersion) return  // ignora se timeframe mudou no meio da animação
-
-        candleSeriesRef.current.update({
+        candleSeriesRef.current!.update({
           time: safeTime(c.time),
           open: c.open,
           high: Math.max(c.open, highAnim, animatedClose),
@@ -445,10 +499,8 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
         })
         setLastPrice(parseFloat(animatedClose.toFixed(2)))
       } else {
-        // ── Movimento normal: interpola close suavemente ─────────────────
         const animatedClose = animFromRef.current + (animToRef.current - animFromRef.current) * easeOut(t)
-        if (versionRef.current !== myVersion) return  // ignora se timeframe mudou no meio da animação
-        candleSeriesRef.current.update({
+        candleSeriesRef.current!.update({
           time: safeTime(c.time),
           open: c.open,
           high: Math.max(c.high, animatedClose),
@@ -466,24 +518,9 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
     }
 
     animFrameRef.current = requestAnimationFrame(tick)
-
-    // ── Linha de previsão ─────────────────────────────────────────────────
-    // Suaviza o score com EMA para evitar mudanças bruscas de direção
-    smoothPredRef.current = smoothPredRef.current + PRED_ALPHA * (prediction - smoothPredRef.current)
-    const smoothedPred = smoothPredRef.current
-
-    if (predLineRef.current) {
-      const futureTime = bucketTime + timeframe * 3
-      const scaleFactor = currentPrice * 0.0005
-      const predicted = parseFloat((currentPrice + smoothedPred * scaleFactor).toFixed(2))
-      predLineRef.current.setData([
-        { time: safeTime(bucketTime), value: currentPrice },
-        { time: safeTime(futureTime), value: predicted },
-      ])
-    }
-
     chartRef.current?.timeScale().scrollToRealTime()
-  }, [currentPrice, timeframe, prediction])
+    
+  }, [currentPrice, timeframe, isActive])  // ⭐ Dependências corretas
 
 
   // ─── Derived display values ──────────────────────────────────────────────

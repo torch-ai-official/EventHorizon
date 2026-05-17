@@ -67,11 +67,7 @@ class SystemApp:
             return ["__CLEAR__"]
         
         elif comando == "reset universe":
-            self.universo.dados = []
-            self.universo.dados_mortos = []
-            self.universo.ultimo_id = 0
-            self.universo.salvar()
-            self.universo.salvar_mortos()
+            self.universo.reset_universo(manter_aprendizado=True)
             respostas.append("universe reset: all units removed and data cleared")
             return respostas
 

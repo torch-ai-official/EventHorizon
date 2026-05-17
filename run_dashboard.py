@@ -36,6 +36,7 @@ def loop_simulacao():
 
         if contador % 100 == 0:
             universo.salvar()
+            universo.mentes.salvar()
 
         time.sleep(0.1)
 

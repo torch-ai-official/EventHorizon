@@ -31,9 +31,21 @@ interface Crypto {
 interface CryptoAppProps {
   cryptos: RawCrypto[]
   executeCommand: (command: string) => Promise<string>
+  onRefresh?: () => Promise<void>
+  pausePolling?: () => void      // ⭐ ADICIONADO
+  resumePolling?: () => void     // ⭐ ADICIONADO
+  clearUnits?: () => void        // ⭐ ADICIONADO
 }
 
-export function CryptoApp({ cryptos, executeCommand }: CryptoAppProps) {
+export function CryptoApp({ 
+  cryptos, 
+  executeCommand, 
+  onRefresh, 
+  pausePolling,   // ⭐ RECEBE
+  resumePolling,  // ⭐ RECEBE
+  clearUnits      // ⭐ RECEBE
+}: CryptoAppProps) {
+
 
   console.log("units recebidos:", cryptos?.length, cryptos?.[0])
 
@@ -42,9 +54,34 @@ export function CryptoApp({ cryptos, executeCommand }: CryptoAppProps) {
   const [lastResult, setLastResult] = useState<string | null>(null)
   const [isRunning, setIsRunning] = useState(false)
   const [priceHistory, setPriceHistory] = useState<{ time: string; avgDelta: number }[]>([])
+  
+  // ⭐ Estado local para controle imediato da UI
+  const [localCryptos, setLocalCryptos] = useState<RawCrypto[]>(cryptos)
+   // ⭐ Flag para impedir restauração automática após stop
+  const [blockAutoSync, setBlockAutoSync] = useState(false)
 
-  // ── Normaliza dados recebidos ──────────────────────────────────────────────
-  const validCryptos: Crypto[] = (cryptos ?? [])
+  // ⭐ Sincroniza quando a prop muda (mas respeita o block)
+  useEffect(() => {
+    if (!blockAutoSync) {
+      setLocalCryptos(cryptos)
+    }
+  }, [cryptos, blockAutoSync])
+
+   // ⭐ Função para limpar TUDO imediatamente
+  const clearAllData = () => {
+    setBlockAutoSync(true)
+    setLocalCryptos([])
+    setPriceHistory([])
+    setLastResult(null)
+    
+    setTimeout(() => {
+      setBlockAutoSync(false)
+    }, 500)
+  }
+
+
+  // ── Normaliza dados recebidos (usa localCryptos agora) ───────────────────
+  const validCryptos: Crypto[] = (localCryptos ?? [])
     .filter(c => c.symbol && c.price !== undefined)
     .map(c => ({
       id: c.id,
@@ -56,8 +93,6 @@ export function CryptoApp({ cryptos, executeCommand }: CryptoAppProps) {
       previsao: (c as any).previsao ?? 0,
     }))
 
-    
-
   // Moeda selecionada (primeira da lista)
   const selected = validCryptos[0] ?? null
 
@@ -67,13 +102,10 @@ export function CryptoApp({ cryptos, executeCommand }: CryptoAppProps) {
   const avgDelta = total > 0
     ? validCryptos.reduce((acc, c) => acc + c.delta, 0) / total
     : 0
-  const avgPrice = total > 0
-    ? validCryptos.reduce((acc, c) => acc + c.price, 0) / total
-    : 0
   const positiveCount = validCryptos.filter(c => c.delta > 0).length
   const negativeCount = validCryptos.filter(c => c.delta < 0).length
 
-  // ── Histórico de delta para o gráfico de barras ────────────────────────────
+  // ── Histórico de delta ────────────────────────────────────────────────────
   useEffect(() => {
     if (total === 0) return
     const interval = setInterval(() => {
@@ -96,28 +128,93 @@ export function CryptoApp({ cryptos, executeCommand }: CryptoAppProps) {
     return () => window.removeEventListener("beforeunload", handler)
   }, [isRunning])
 
-  // ── Handler de comandos ────────────────────────────────────────────────────
-  const handleCommand = async (command: string, buttonId: string) => {
-    setLoading(buttonId)
-    if (command.includes("start")) setIsRunning(true)
-    if (command.includes("stop")) {
-      setIsRunning(false)
-      setPriceHistory([]) // limpa histórico ao parar
+   const handleCommand = async (command: string, buttonId: string) => {
+  setLoading(buttonId)
+  
+  if (command.includes("start")) {
+    setIsRunning(true)
+    
+    // ⭐ RETOMA O POLLING
+    if (resumePolling) {
+      resumePolling()
     }
-
+    
     try {
       const result = await executeCommand(command)
       setLastResult(result)
-
-      await executeCommand("refresh")
-    } finally {
-      setLoading(null)
+    } catch (error) {
+      console.error("Start error:", error)
+      setLastResult("Erro ao iniciar crypto app")
     }
+    
+    setLoading(null)
+    return
   }
+  
+  if (command.includes("stop")) {
+  setIsRunning(false)
+  
+  if (pausePolling) {
+    pausePolling()
+  }
+  
+  // ⭐ 1. Limpa UI local
+  clearAllData()
+  
+  // ⭐ 2. Limpa o units no parent (IMEDIATAMENTE)
+  if (clearUnits) {
+    clearUnits()
+  }
+  
+  // ⭐ 3. Executa stop no backend
+  try {
+    const result = await executeCommand(command)
+    setLastResult(result)
+  } catch (error) {
+    console.error("Stop error:", error)
+  }
+  
+  // ⭐ 4. Aguarda
+  await new Promise(resolve => setTimeout(resolve, 3000))
+  
+  // ⭐ 5. Força refresh final
+  if (onRefresh) {
+    await onRefresh()
+  }
+  
+  if (resumePolling) {
+    resumePolling()
+  }
+  
+  setLoading(null)
+  return
+  }
+
+  // Para SPAWN, SIGNAL e outros comandos
+  try {
+    const result = await executeCommand(command)
+    setLastResult(result)
+
+    if (command.includes("spawn")) {
+      // ⭐ GARANTE QUE O POLLING ESTÁ RODANDO
+      if (resumePolling) {
+        resumePolling()
+      }
+      
+      if (onRefresh) {
+        await onRefresh()
+      }
+    }
+  } catch (error) {
+    console.error("Command error:", error)
+  } finally {
+    setLoading(null)
+  }
+}
+
 
   return (
     <div className="space-y-6">
-
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -144,22 +241,37 @@ export function CryptoApp({ cryptos, executeCommand }: CryptoAppProps) {
 
       {/* ── Métricas ──────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { icon: <BarChart3 className="h-4 w-4 text-amber-400" />, label: "Moedas", value: total, color: "amber" },
-          { icon: <Zap className="h-4 w-4 text-cyan-400" />, label: "Mais Forte", value: strongest?.symbol ?? "-", color: "cyan" },
-          { icon: <TrendingUp className="h-4 w-4 text-green-400" />, label: "Em Alta", value: positiveCount, color: "green" },
-          { icon: <TrendingDown className="h-4 w-4 text-red-400" />, label: "Em Baixa", value: negativeCount, color: "red" },
-        ].map(({ icon, label, value, color }) => (
-          <div key={label} className="relative overflow-hidden rounded-lg border border-border/50 bg-secondary/30 p-4">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                {icon}
-                <span className="text-xs font-medium text-muted-foreground">{label}</span>
-              </div>
-              <p className={`text-2xl font-bold text-${color}-400`}>{value}</p>
-            </div>
+        <div className="relative overflow-hidden rounded-lg border border-border/50 bg-secondary/30 p-4">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-amber-400" />
+            <span className="text-xs font-medium text-muted-foreground">Moedas</span>
           </div>
-        ))}
+          <p className="text-2xl font-bold text-amber-400 mt-2">{total}</p>
+        </div>
+        
+        <div className="relative overflow-hidden rounded-lg border border-border/50 bg-secondary/30 p-4">
+          <div className="flex items-center gap-2">
+            <Zap className="h-4 w-4 text-cyan-400" />
+            <span className="text-xs font-medium text-muted-foreground">Mais Forte</span>
+          </div>
+          <p className="text-2xl font-bold text-cyan-400 mt-2">{strongest?.symbol ?? "-"}</p>
+        </div>
+        
+        <div className="relative overflow-hidden rounded-lg border border-border/50 bg-secondary/30 p-4">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-green-400" />
+            <span className="text-xs font-medium text-muted-foreground">Em Alta</span>
+          </div>
+          <p className="text-2xl font-bold text-green-400 mt-2">{positiveCount}</p>
+        </div>
+        
+        <div className="relative overflow-hidden rounded-lg border border-border/50 bg-secondary/30 p-4">
+          <div className="flex items-center gap-2">
+            <TrendingDown className="h-4 w-4 text-red-400" />
+            <span className="text-xs font-medium text-muted-foreground">Em Baixa</span>
+          </div>
+          <p className="text-2xl font-bold text-red-400 mt-2">{negativeCount}</p>
+        </div>
       </div>
 
       {/* ── Timeframe selector ────────────────────────────────────────────── */}
@@ -179,91 +291,101 @@ export function CryptoApp({ cryptos, executeCommand }: CryptoAppProps) {
       </div>
 
       {/* ── TradingChart ──────────────────────────────────────────────────── */}
-      {selected && (
+      {selected && total > 0 && (
         <div className="rounded-lg border border-border/50 bg-secondary/20 p-3">
           <TradingChart
-            candles={selected.candles}        // ✅ todos os candles sem filtro
-            currentPrice={selected.price}     // ✅ preço em tempo real direto da Binance
+            candles={selected.candles}
+            currentPrice={selected.price}
             prediction={selected.previsao}
             timeframe={timeframe}
             symbol={selected.symbol}
+            isActive={isRunning}
           />
         </div>
       )}
 
-      {/* ── Gráfico de delta ──────────────────────────────────────────────── */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-muted-foreground">Evolução do Mercado</span>
-          <span className={cn("font-medium", avgDelta > 0 ? "text-green-400" : avgDelta < 0 ? "text-red-400" : "text-muted-foreground")}>
-            {avgDelta > 0 ? "+" : ""}{avgDelta.toFixed(2)}%
-          </span>
-        </div>
-        <div className="h-36 rounded-lg border border-border/50 bg-secondary/20 p-3">
-          {priceHistory.length > 1 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={priceHistory}>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
-                <XAxis dataKey="time" tick={{ fontSize: 10, fill: "#aaa" }} />
-                <YAxis tick={{ fontSize: 10, fill: "#aaa" }} />
-                <Tooltip />
-                <Bar dataKey="avgDelta" radius={[4, 4, 0, 0]}>
-                  {priceHistory.map((entry, i) => (
-                    <Cell key={i} fill={entry.avgDelta >= 0 ? "#22c55e" : "#ef4444"} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
-              Aguardando dados...
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── Lista de moedas ───────────────────────────────────────────────── */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-muted-foreground">Mercado</span>
-          <span className="text-muted-foreground">{total} moedas</span>
-        </div>
-        <div className="rounded-lg border border-border/50 bg-secondary/40 p-3 space-y-2 max-h-48 overflow-y-auto">
-          {validCryptos.length > 0 && (
-            <div className="flex justify-between text-[10px] font-medium text-muted-foreground uppercase tracking-wider pb-2 border-b border-border/30">
-              <span className="w-16">Symbol</span>
-              <span className="w-20 text-right">Preço</span>
-              <span className="w-16 text-right">Delta</span>
-              <span className="w-14 text-right">Energia</span>
-              <span className="w-12 text-right">Sinal</span>
-            </div>
-          )}
-          {validCryptos.map((c) => {
-            const trendScore = c.energy * Math.sign(c.delta)
-            return (
-              <div key={c.id} className="flex justify-between text-sm font-mono items-center py-1 hover:bg-secondary/40 rounded px-1">
-                <span className="w-16 font-medium text-foreground">{c.symbol}</span>
-                <span className="w-20 text-right text-white">${c.price.toFixed(2)}</span>
-                <span className={cn("w-16 text-right font-medium flex items-center justify-end gap-1",
-                  c.delta > 0 ? "text-green-400" : c.delta < 0 ? "text-red-400" : "text-muted-foreground"
-                )}>
-                  {c.delta > 0 ? <TrendingUp className="h-3 w-3" /> : c.delta < 0 ? <TrendingDown className="h-3 w-3" /> : null}
-                  {c.delta.toFixed(2)}%
-                </span>
-                <span className="w-14 text-right text-cyan-400">{c.energy.toFixed(1)}</span>
-                <span className={cn("w-12 text-right text-xs font-bold px-2 py-0.5 rounded",
-                  trendScore > 0 ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"
-                )}>
-                  {trendScore > 0 ? "BUY" : "SELL"}
-                </span>
+      {/* ── Gráfico de delta (só mostra se tiver dados) ─────────────────── */}
+      {total > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">Evolução do Mercado</span>
+            <span className={cn("font-medium", avgDelta > 0 ? "text-green-400" : avgDelta < 0 ? "text-red-400" : "text-muted-foreground")}>
+              {avgDelta > 0 ? "+" : ""}{avgDelta.toFixed(2)}%
+            </span>
+          </div>
+          <div className="h-36 rounded-lg border border-border/50 bg-secondary/20 p-3">
+            {priceHistory.length > 1 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={priceHistory}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
+                  <XAxis dataKey="time" tick={{ fontSize: 10, fill: "#aaa" }} />
+                  <YAxis tick={{ fontSize: 10, fill: "#aaa" }} />
+                  <Tooltip />
+                  <Bar dataKey="avgDelta" radius={[4, 4, 0, 0]}>
+                    {priceHistory.map((entry, i) => (
+                      <Cell key={i} fill={entry.avgDelta >= 0 ? "#22c55e" : "#ef4444"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
+                Aguardando dados...
               </div>
-            )
-          })}
-          {total === 0 && (
-            <p className="text-xs text-center text-muted-foreground py-4">Nenhuma moeda carregada</p>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* ── Lista de moedas (só mostra se tiver moedas) ───────────────────── */}
+      {total > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">Mercado</span>
+            <span className="text-muted-foreground">{total} moedas</span>
+          </div>
+          <div className="rounded-lg border border-border/50 bg-secondary/40 p-3 space-y-2 max-h-48 overflow-y-auto">
+            {validCryptos.length > 0 && (
+              <div className="flex justify-between text-[10px] font-medium text-muted-foreground uppercase tracking-wider pb-2 border-b border-border/30">
+                <span className="w-16">Symbol</span>
+                <span className="w-20 text-right">Preço</span>
+                <span className="w-16 text-right">Delta</span>
+                <span className="w-14 text-right">Energia</span>
+                <span className="w-12 text-right">Sinal</span>
+              </div>
+            )}
+            {validCryptos.map((c) => {
+              const trendScore = c.energy * Math.sign(c.delta)
+              return (
+                <div key={c.id} className="flex justify-between text-sm font-mono items-center py-1 hover:bg-secondary/40 rounded px-1">
+                  <span className="w-16 font-medium text-foreground">{c.symbol}</span>
+                  <span className="w-20 text-right text-white">${c.price.toFixed(2)}</span>
+                  <span className={cn("w-16 text-right font-medium flex items-center justify-end gap-1",
+                    c.delta > 0 ? "text-green-400" : c.delta < 0 ? "text-red-400" : "text-muted-foreground"
+                  )}>
+                    {c.delta > 0 ? <TrendingUp className="h-3 w-3" /> : c.delta < 0 ? <TrendingDown className="h-3 w-3" /> : null}
+                    {c.delta.toFixed(2)}%
+                  </span>
+                  <span className="w-14 text-right text-cyan-400">{c.energy.toFixed(1)}</span>
+                  <span className={cn("w-12 text-right text-xs font-bold px-2 py-0.5 rounded",
+                    trendScore > 0 ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"
+                  )}>
+                    {trendScore > 0 ? "BUY" : "SELL"}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Mensagem quando não tem moedas ─────────────────────────────────── */}
+      {total === 0 && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-8 text-center">
+          <p className="text-amber-400 font-medium">Nenhuma moeda carregada</p>
+          <p className="text-xs text-muted-foreground mt-1">Clique em "Load Coins" para começar</p>
+        </div>
+      )}
 
       {/* ── Botões ────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-4 gap-3">
@@ -296,7 +418,6 @@ export function CryptoApp({ cryptos, executeCommand }: CryptoAppProps) {
           <p className="text-sm font-mono whitespace-pre-line text-foreground">{lastResult}</p>
         </div>
       )}
-
     </div>
   )
 }
