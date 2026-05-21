@@ -18,7 +18,7 @@ def pegar_preco(simbolo):
 
 
 # =============================================================================
-# 📐 INDICADORES TÉCNICOS
+#  INDICADORES TÉCNICOS
 # =============================================================================
 
 def calcular_ema(precos, periodo):
@@ -157,7 +157,7 @@ def detectar_padroes_candle(candles):
 
 
 # =============================================================================
-# 🧠 PESOS ADAPTATIVOS — com correção de viés
+#  PESOS ADAPTATIVOS — com correção de viés
 # =============================================================================
 
 class PesosAdaptativos:
@@ -232,7 +232,7 @@ class PesosAdaptativos:
 
 
 # =============================================================================
-# 🤖 CRYPTO APP
+#  CRYPTO APP
 # =============================================================================
 
 class CryptoApp:
@@ -256,37 +256,54 @@ class CryptoApp:
         self.lista_moedas = [
             "BTCUSDT",
             "ETHUSDT",
-            # "BNBUSDT",
-            # "XRPUSDT",
-            # "ADAUSDT",
-            # "SOLUSDT",
-            # "DOGEUSDT",
-            # "DOTUSDT",
-            # "MATICUSDT",
-            # "LTCUSDT"
+             "BNBUSDT",
+             "XRPUSDT",
+             "ADAUSDT",
+             "SOLUSDT",
+             "DOGEUSDT",
+             "DOTUSDT",
+             "MATICUSDT",
+             "LTCUSDT"
         ]
 
     
     def remover_moedas(self):
+        """Remove todas as moedas crypto - versão robusta"""
+        
+        print(f"[CRYPTO] ids_cripto ANTES: {list(self.ids_cripto.keys())}")
+        
+        # ⭐ Se ids_cripto está vazio, busca por tipo "crypto"
+        if not self.ids_cripto:
+            print("[CRYPTO] ids_cripto vazio! Buscando por tipo 'crypto'...")
+            for dado in self.universo.dados:
+                if dado.get("tipo") == "crypto":
+                    self.ids_cripto[dado.get("symbol", "unknown")] = dado["id"]
+            print(f"[CRYPTO] Encontrados {len(self.ids_cripto)} dados crypto")
+        
         ids_para_remover = set(self.ids_cripto.values())
+        print(f"[CRYPTO] IDs para remover: {ids_para_remover}")
         
+        # ⭐ Remove os dados
+        novos_dados = []
         for dado in self.universo.dados:
-            if dado["id"] in ids_para_remover:
-                self.universo.matar_dado(dado)
-
-            
-        self.universo.processar_mortes()
-
+            if dado["id"] not in ids_para_remover:
+                novos_dados.append(dado)
+            else:
+                print(f"[CRYPTO] Removendo dado ID {dado['id']} - {dado.get('symbol', 'unknown')}")
         
+        self.universo.dados = novos_dados
+        
+        # ⭐ Limpa os registros locais
         self.ids_cripto.clear()
         self.pesos.clear()
         self.features_anteriores.clear()
         self.preco_anterior.clear()
         self.precos.clear()
-
+        
+        # ⭐ Salva forçadamente
         self.universo.salvar()
-
-
+        
+        print(f"[CRYPTO] Removidas {len(ids_para_remover)} moedas. Restam {len(self.universo.dados)} dados.")
     # ─────────────────────────────────────────────────────────────────────────
     # HANDLE
     # ─────────────────────────────────────────────────────────────────────────
