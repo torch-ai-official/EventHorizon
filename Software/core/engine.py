@@ -6,7 +6,7 @@ import time
 import uuid
 import math
 import statistics
-
+import torch
 from Software.core.mind import BancoMentes
 
 
@@ -178,7 +178,8 @@ class Universo:
         return dado
 
     # ── Forward (delega para a Mente) ─────────────────────────────────────────
-    def forward(self, dado, energia_outro, distancia):
+    def forward_multi(self, dado, energia_outro, distancia):
+        """Retorna a lista completa de previsões por horizonte"""
         memoria_score = self.score_memoria(dado)
 
         entrada = [
@@ -190,18 +191,36 @@ class Universo:
         ]
 
         mente = self.mentes.obter(dado["id"])
-        saida = mente.forward(entrada)
+        return mente.forward(entrada)  # Retorna lista [5s, 15s, 30s, 60s]
 
-        # Mantém compatibilidade — alguns apps leem ultima_acao do dado
-        dado["ultima_acao"]   = saida
-        dado["ultima_entrada"] = entrada
-
-        return saida
+    def forward(self, dado, energia_outro, distancia):
+        """Compatibilidade: retorna apenas o primeiro horizonte (5s)"""
+        saida_multi = self.forward_multi(dado, energia_outro, distancia)
+        return saida_multi[0] if saida_multi else 0.0
 
     # ── Aprender (delega para a Mente) ────────────────────────────────────────
     def aprender(self, dado, recompensa):
+        """Aprendizado do universo (compatível com PyTorch e clássico)"""
         mente = self.mentes.obter(dado["id"])
-        mente.aprender(recompensa)
+        
+        # ⭐ Verifica se é uma mente PyTorch INSANA
+        if hasattr(mente, 'cabecas'):  # Mente INSANA tem o atributo 'cabecas'
+            # Converte recompensa para lista de 4 valores
+            if isinstance(recompensa, (int, float)):
+                recompensas = [recompensa / 5.0] * 4
+            elif isinstance(recompensa, torch.Tensor):
+                if recompensa.numel() == 0:
+                    return
+                # Se for tensor, pega o valor escalar
+                valor = recompensa.item() if recompensa.numel() == 1 else recompensa.mean().item()
+                recompensas = [valor / 5.0] * 4
+            else:
+                # Se já for lista, usa direto (mas deve ter 4 elementos)
+                recompensas = recompensa if len(recompensa) == 4 else [0.0] * 4
+            mente.aprender(recompensas)
+        else:
+            # Mente clássica (não PyTorch)
+            mente.aprender(recompensa)
 
     # ── Persistência ──────────────────────────────────────────────────────────
     def salvar(self):
@@ -346,7 +365,11 @@ class Universo:
 
                 impacto        = pulso["energia"] - consumo_por_tick(destino)
                 impacto_global = impacto + 0.2 * self.memoria_global["delta_energia"]
+                # Dentro de evoluir_pulsos, quando chama self.aprender(origem, impacto_global)
+                if isinstance(impacto_global, torch.Tensor) and impacto_global.numel() == 0:
+                    continue  # ignora aprendizado com tensor vazio
                 self.aprender(origem, impacto_global)
+                
 
                 destino["energia"] += pulso["energia"]
                 destino["estado"][0] += pulso["energia"] * 0.05
@@ -699,3 +722,23 @@ class Universo:
         
         # Salva o universo vazio
         self.salvar()
+
+
+    def remover_dados_por_ids(self, ids_para_remover):
+        """Remove dados por IDs - método direto"""
+        print(f"[Engine] 🔴 Tentando remover IDs: {ids_para_remover}")
+        print(f"[Engine] 📊 Dados antes: {len(self.dados)}")
+        
+        novos_dados = []
+        for dado in self.dados:
+            if dado["id"] not in ids_para_remover:
+                novos_dados.append(dado)
+            else:
+                print(f"[Engine] 🗑️ Removendo dado ID {dado['id']} - {dado.get('symbol', 'unknown')}")
+        
+        self.dados = novos_dados
+        self.salvar()
+        
+        print(f"[Engine] 📊 Dados depois: {len(self.dados)}")
+        
+        return len(ids_para_remover)

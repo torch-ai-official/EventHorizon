@@ -13,12 +13,17 @@ interface TradingChartProps {
   candles: Candle[]
   currentPrice: number
   prediction: number
+  prediction5s?: number
+  prediction15s?: number
+  prediction30s?: number
+  prediction60s?: number
   timeframe?: number
   symbol?: string
   isActive?: boolean
-  chartType?: "candlestick" | "line" | "area"  // ⭐ NOVO
-  showIndicators?: boolean                      // ⭐ NOVO
+  chartType?: "candlestick" | "line" | "area"
+  showIndicators?: boolean
 }
+
 function safeTime(t: any): UTCTimestamp {
   return Math.floor(Number(t)) as UTCTimestamp
 }
@@ -64,7 +69,53 @@ function calcRSI(data: Candle[], period = 14): number {
   return parseFloat((100 - 100 / (1 + rs)).toFixed(2))
 }
 
-export function TradingChart({ candles, currentPrice, prediction, timeframe = 5, symbol = "BTCUSDT", isActive = true, chartType = "candlestick", showIndicators = true }: TradingChartProps) {
+// ⭐ Função para gerar velas futuras (INDEPENDENTES - cada horizonte baseado no preço atual)
+function gerarVelasFuturas(
+  currentPrice: number,
+  currentTime: number,
+  timeframe: number,
+  predictions: { time: number; value: number }[]
+): Candle[] {
+  const velasFuturas: Candle[] = []
+  const now = Math.floor(currentTime / 1000)
+  const currentBucket = now - (now % timeframe)
+  
+  for (let i = 0; i < predictions.length; i++) {
+    const pred = predictions[i]
+    const tempoFuturo = currentBucket + pred.time
+    
+    const variacaoPercentual = pred.value / 100
+    const precoFuturo = currentPrice * (1 + variacaoPercentual)
+    
+    const bodySize = Math.abs(precoFuturo - currentPrice)
+    const wickSize = bodySize * 0.15
+    
+    velasFuturas.push({
+      time: tempoFuturo,
+      open: currentPrice,
+      high: Math.max(currentPrice, precoFuturo) + wickSize,
+      low: Math.min(currentPrice, precoFuturo) - wickSize,
+      close: precoFuturo,
+    })
+  }
+  
+  return velasFuturas
+}
+
+export function TradingChart({ 
+  candles, 
+  currentPrice, 
+  prediction, 
+  prediction5s, 
+  prediction15s, 
+  prediction30s, 
+  prediction60s, 
+  timeframe = 5, 
+  symbol = "BTCUSDT", 
+  isActive = true, 
+  chartType = "candlestick", 
+  showIndicators = true 
+}: TradingChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null)
@@ -73,9 +124,7 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
   const bbUpperRef = useRef<ISeriesApi<"Line"> | null>(null)
   const bbLowerRef = useRef<ISeriesApi<"Line"> | null>(null)
   const bbMidRef = useRef<ISeriesApi<"Line"> | null>(null)
-  const predLineRef = useRef<ISeriesApi<"Line"> | null>(null)
   
-  // ⭐ Usamos setTimeout em vez de requestAnimationFrame para não congelar
   const animationIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const targetPriceRef = useRef<number>(currentPrice)
   const currentAnimatedPriceRef = useRef<number>(currentPrice)
@@ -86,13 +135,17 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
   const [priceChange, setPriceChange] = useState(0)
   const [currentCandleTime, setCurrentCandleTime] = useState<number | null>(null)
   const containerOuterRef = useRef<HTMLDivElement>(null)
-  const chartContainerRef = useRef<HTMLDivElement>(null)
-
   const [isFullscreen, setIsFullscreen] = useState(false)
-
+  const futureCandlesRef = useRef<ISeriesApi<"Candlestick"> | null>(null)
+  const predictions = [
+    { time: 5, value: prediction5s ?? prediction },
+    { time: 15, value: prediction15s ?? prediction },
+    { time: 30, value: prediction30s ?? prediction },
+    { time: 60, value: prediction60s ?? prediction },
+  ].filter(p => p.value !== undefined)
+  
   const toggleFullscreen = async () => {
     if (!containerOuterRef.current) return
-    
     if (!isFullscreen) {
       await containerOuterRef.current.requestFullscreen()
       setIsFullscreen(true)
@@ -102,10 +155,11 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
     }
   }
 
+  
+
   useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement)
-      // Força redimensionamento do gráfico
       setTimeout(() => {
         chartRef.current?.applyOptions({ 
           width: containerOuterRef.current?.clientWidth || 0,
@@ -113,17 +167,14 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
         })
       }, 100)
     }
-    
     document.addEventListener('fullscreenchange', handleFullscreenChange)
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
   }, [isFullscreen])
 
-  // ⭐ Atualiza o preço alvo
   useEffect(() => {
     targetPriceRef.current = currentPrice
   }, [currentPrice])
 
-  // ⭐ Animação suave usando setInterval (não congela em segundo plano)
   useEffect(() => {
     if (!isActive) {
       if (animationIntervalRef.current) {
@@ -140,42 +191,48 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
     animationIntervalRef.current = setInterval(() => {
       if (!candleSeriesRef.current) return
       
-      // Move suavemente em direção ao preço alvo
       const diff = targetPriceRef.current - currentAnimatedPriceRef.current
       if (Math.abs(diff) < 0.01) {
         currentAnimatedPriceRef.current = targetPriceRef.current
       } else {
-        currentAnimatedPriceRef.current += diff * 0.3 // 30% do caminho por frame
+        currentAnimatedPriceRef.current += diff * 0.3
       }
       
       const animatedPrice = currentAnimatedPriceRef.current
       const now = Math.floor(Date.now() / 1000)
       const bucketTime = now - (now % timeframe)
       
-      // Encontra ou cria o candle atual
       const existingCandle = candles.find(c => c.time === bucketTime)
       
-      if (existingCandle) {
-        candleSeriesRef.current!.update({
-          time: safeTime(bucketTime),
-          open: existingCandle.open,
-          high: Math.max(existingCandle.high, animatedPrice),
-          low: Math.min(existingCandle.low, animatedPrice),
-          close: animatedPrice,
-        })
+      if (chartType === "candlestick") {
+        if (existingCandle) {
+          candleSeriesRef.current!.update({
+            time: safeTime(bucketTime),
+            open: existingCandle.open,
+            high: Math.max(existingCandle.high, animatedPrice),
+            low: Math.min(existingCandle.low, animatedPrice),
+            close: animatedPrice,
+          })
+        } else {
+          candleSeriesRef.current!.update({
+            time: safeTime(bucketTime),
+            open: animatedPrice,
+            high: animatedPrice,
+            low: animatedPrice,
+            close: animatedPrice,
+          })
+        }
       } else {
-        candleSeriesRef.current!.update({
+        const lineSeries = candleSeriesRef.current as unknown as ISeriesApi<"Line">
+        lineSeries.update({
           time: safeTime(bucketTime),
-          open: animatedPrice,
-          high: animatedPrice,
-          low: animatedPrice,
-          close: animatedPrice,
+          value: animatedPrice,
         })
       }
       
       setLastPrice(animatedPrice)
-      chartRef.current?.timeScale().scrollToRealTime()
-    }, 50) // 20 FPS, suave mas não pesado
+     // chartRef.current?.timeScale().scrollToRealTime()
+    }, 50)
 
     return () => {
       if (animationIntervalRef.current) {
@@ -183,19 +240,16 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
         animationIntervalRef.current = null
       }
     }
-  }, [isActive, timeframe, candles])
+  }, [isActive, timeframe, candles, chartType])
 
-  // ⭐ Recria a série quando o tipo de gráfico muda
   useEffect(() => {
     if (!chartRef.current) return
 
-    // Remove a série antiga
     if (candleSeriesRef.current) {
       chartRef.current.removeSeries(candleSeriesRef.current)
       candleSeriesRef.current = null
     }
 
-    // Cria a nova série baseada no tipo
     let newSeries: any = null
     
     if (chartType === "candlestick") {
@@ -216,20 +270,19 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
       })
     } else {
       newSeries = chartRef.current.addSeries(AreaSeries, {
-      topColor: "rgba(0, 230, 118, 0.4)",   // Verde transparente no topo
-      bottomColor: "rgba(0, 230, 118, 0.0)", // Transparente na base
-      lineColor: "#00e676",                  // Linha verde vibrante
-      lineWidth: 2,
-      crosshairMarkerVisible: true,
-      crosshairMarkerRadius: 4,
-      crosshairMarkerBorderColor: "#00e676",
-      crosshairMarkerBackgroundColor: "#1a2a3a",
-    })
+        topColor: "rgba(0, 230, 118, 0.4)",
+        bottomColor: "rgba(0, 230, 118, 0.0)",
+        lineColor: "#00e676",
+        lineWidth: 2,
+        crosshairMarkerVisible: true,
+        crosshairMarkerRadius: 4,
+        crosshairMarkerBorderColor: "#00e676",
+        crosshairMarkerBackgroundColor: "#1a2a3a",
+      })
     }
 
     candleSeriesRef.current = newSeries
 
-    // Recarrega os dados históricos
     const now = Math.floor(Date.now() / 1000)
     const bucketTime = now - (now % timeframe)
     
@@ -260,12 +313,10 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
 
   }, [chartType, timeframe, candles])
 
-  // ⭐ Reset do preço animado quando o timeframe muda
   useEffect(() => {
     currentAnimatedPriceRef.current = currentPrice
   }, [timeframe, currentPrice])
 
-  // ⭐ Build chart once (MODIFICADO)
   useEffect(() => {
     if (!containerRef.current) return
 
@@ -302,7 +353,6 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
       height: 600,
     })
 
-    // ⭐ Série principal baseada no tipo de gráfico
     let mainSeries: any = null
     
     if (chartType === "candlestick") {
@@ -333,7 +383,6 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
 
     candleSeriesRef.current = mainSeries
 
-    // ⭐ Só adiciona indicadores se showIndicators for true
     if (showIndicators) {
       ema9Ref.current = chart.addSeries(LineSeries, { 
         color: "#f59e0b", lineWidth: 1, priceLineVisible: false, lastValueVisible: false 
@@ -352,26 +401,7 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
       })
     }
 
-    // Linha de previsão (sempre adiciona)
-    predLineRef.current = chart.addSeries(LineSeries, { 
-      color: "#d946ef", lineWidth: 2, lineStyle: LineStyle.Dashed 
-    })
-
     chartRef.current = chart
-
-    // Crosshair hover (adaptado para line/area)
-    chart.subscribeCrosshairMove((param) => {
-      if (!param.time || !param.seriesData) {
-        setHoverOHLC(null)
-        return
-      }
-      const data = param.seriesData.get(mainSeries) as any
-      if (data && chartType === "candlestick") {
-        setHoverOHLC({ time: safeTime(param.time), open: data.open, high: data.high, low: data.low, close: data.close })
-      } else if (data) {
-        setLastPrice(data.value)
-      }
-    })
 
     const ro = new ResizeObserver(() => {
       if (containerRef.current) {
@@ -386,22 +416,64 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
       chart.remove()
       chartRef.current = null
     }
-  }, [timeframe, chartType, showIndicators])  // ⭐ Dependências atualizadas
+  }, [timeframe, chartType, showIndicators])
 
-  // ⭐ Carrega os candles históricos e REAGRUPAR pelo timeframe atual
+  useEffect(() => {
+  if (!chartRef.current || predictions.length === 0) return
+  
+  // Remove série anterior se existir
+  if (futureCandlesRef.current) {
+    try { chartRef.current.removeSeries(futureCandlesRef.current) } catch(e) {}
+    futureCandlesRef.current = null
+  }
+  
+  const now = Date.now()
+  
+  // ⭐ Para CANDLESTICK: mostra velas futuras
+  if (chartType === "candlestick") {
+    const velasFuturas = gerarVelasFuturas(currentPrice, now, timeframe, predictions)
+    if (velasFuturas.length === 0) return
+    
+    futureCandlesRef.current = chartRef.current.addSeries(CandlestickSeries, {
+      upColor: "rgba(0, 230, 118, 0.3)",
+      downColor: "rgba(255, 61, 87, 0.3)",
+      borderUpColor: "rgba(0, 230, 118, 0.6)",
+      borderDownColor: "rgba(255, 61, 87, 0.6)",
+      wickUpColor: "rgba(0, 168, 84, 0.3)",
+      wickDownColor: "rgba(204, 45, 68, 0.3)",
+    })
+    
+    const dataToSet = velasFuturas.map(c => ({
+      time: safeTime(c.time),
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+    }))
+    
+    futureCandlesRef.current.setData(dataToSet)
+    
+    // ⭐ Ajusta a escala do gráfico para mostrar as velas futuras
+    setTimeout(() => {
+      //chartRef.current?.timeScale().fitContent()
+    }, 100)
+  }
+  
+}, [currentPrice, timeframe, predictions, chartType])
+
+  
+
   useEffect(() => {
     if (!candleSeriesRef.current || candles.length === 0) return
 
     const now = Math.floor(Date.now() / 1000)
     const bucketTime = now - (now % timeframe)
     
-    // ⭐ REAGRUPAR candles pelo timeframe atual (NÃO usar os candles como estão)
     const groupedCandles = new Map<number, Candle>()
     
     for (const c of candles) {
-      // Agrupa pelo bucket do timeframe ATUAL
       const bucket = c.time - (c.time % timeframe)
-      if (bucket >= bucketTime) continue  // Ignora candle atual
+      if (bucket >= bucketTime) continue
       
       if (!groupedCandles.has(bucket)) {
         groupedCandles.set(bucket, {
@@ -449,7 +521,6 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
         setPriceChange(parseFloat((((last.close - prev.close) / prev.close) * 100).toFixed(3)))
       }
 
-      // Só atualiza indicadores se estiverem ativos
       if (showIndicators && ema9Ref.current && closedCandles.length >= 9) {
         ema9Ref.current.setData(calcEMA(closedCandles, 9) as any)
       }
@@ -464,7 +535,6 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
       }
     }
     
-    // Define o candle atual baseado no timeframe atual
     const currentCandle = candles.find(c => {
       const bucket = c.time - (c.time % timeframe)
       return bucket === bucketTime
@@ -476,31 +546,14 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
     }
   }, [candles, timeframe, chartType, showIndicators])
 
-  // ⭐ Linha de previsão (atualiza diretamente, sem animação)
-  useEffect(() => {
-    if (!predLineRef.current || !currentPrice) return
-
-    const now = Math.floor(Date.now() / 1000)
-    const bucketTime = now - (now % timeframe)
-    const futureTime = bucketTime + timeframe * 3
-    const predicted = currentPrice * Math.exp(prediction * 0.01)
-    
-    predLineRef.current.setData([
-      { time: safeTime(bucketTime), value: currentPrice },
-      { time: safeTime(futureTime), value: predicted },
-    ])
-  }, [currentPrice, timeframe, prediction])
-
-  // ⭐ Atualiza o preço exibido no topo
-  useEffect(() => {
-    if (currentPrice) {
-      // O lastPrice é atualizado pela animação
-    }
-  }, [currentPrice])
-
   const displayCandle = hoverOHLC ?? (candles.length ? candles[candles.length - 1] : null)
   const isGreen = displayCandle ? displayCandle.close >= displayCandle.open : true
   const rsiColor = rsi > 70 ? "#ff3d57" : rsi < 30 ? "#00e676" : "#f59e0b"
+
+  
+
+  const positiveCount = predictions.filter(p => p.value > 0).length
+  const negativeCount = predictions.filter(p => p.value < 0).length
 
   return (
     <div className="relative w-full rounded-xl overflow-hidden select-none" style={{ background: "#060b14", fontFamily: "'JetBrains Mono', monospace" }}>
@@ -526,7 +579,6 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
           </div>
         </div>
 
-        {/* OHLC Hover Info */}
         {displayCandle && (
           <div className="flex gap-4 text-xs tabular-nums" style={{ color: "#4a6a8a" }}>
             {[
@@ -581,7 +633,7 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
       </div>
 
       {/* Chart */}
-      <div ref={containerRef} className="w-full" style={{ height: 600 }} />
+      <div ref={containerRef} className="w-full" style={{ height: 500 }} />
 
       {/* RSI Meter Bar */}
       <div className="px-4 py-2 flex items-center gap-3" style={{ background: "#060b14", borderTop: "1px solid #0d1a28" }}>
@@ -603,8 +655,8 @@ export function TradingChart({ candles, currentPrice, prediction, timeframe = 5,
       </div>
 
       {/* Watermark */}
-      <div className="absolute top-16 left-1/2 -translate-x-1/2 pointer-events-none select-none text-center" style={{ opacity: 0.03 }}>
-        <div className="text-5xl font-black tracking-widest" style={{ color: "#fff" }}>{symbol.replace("USDT", "")}</div>
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none select-none text-center" style={{ opacity: 0.02 }}>
+        <div className="text-7xl font-black tracking-widest whitespace-nowrap" style={{ color: "#fff" }}>{symbol.replace("USDT", "")}</div>
       </div>
     </div>
   )

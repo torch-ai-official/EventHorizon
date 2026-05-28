@@ -41,18 +41,19 @@ def loop_simulacao():
         time.sleep(0.1)
 
 
-# 🔥 FRONTEND
+# 🔥 FRONTEND (Next.js na porta 3000)
 def start_frontend():
     global frontend_process
 
-    if porta_em_uso(5173):  # Vite padrão
-        print("Frontend já está rodando")
+    # ⭐ MUDADO: porta do Next.js é 3000
+    if porta_em_uso(3000):
+        print("Frontend já está rodando na porta 3000")
         return
 
-    print("Iniciando frontend...")
+    print("Iniciando frontend Next.js...")
     frontend_process = subprocess.Popen(
         ["npm.cmd", "run", "dev"],
-        cwd="Dashboard"
+        cwd="Dashboard"  # ou o nome da sua pasta do frontend
     )
 
 
@@ -77,10 +78,10 @@ threading.Thread(target=start_api, daemon=True).start()
 
 # espera subir
 esperar_servico(8000, "API")
-esperar_servico(5173, "Frontend")
+esperar_servico(3000, "Frontend Next.js")  # ⭐ MUDADO para 3000
 
 # abre browser
-webbrowser.open("http://127.0.0.1:5173")  # frontend (não a API!)
+webbrowser.open("http://127.0.0.1:3000")  # ⭐ MUDADO para 3000
 
 # loop principal
 while True:

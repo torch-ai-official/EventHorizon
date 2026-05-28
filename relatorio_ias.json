@@ -1,0 +1,149 @@
+{
+  "data_analise": "2026-05-27T22:44:50.745265",
+  "total_ias": 6,
+  "ranking": [
+    {
+      "arquivo": "mente_578.pt",
+      "id": "578",
+      "moeda": "desconhecida",
+      "geracao": 42,
+      "acertos": [
+        39.0,
+        32.0,
+        39.0,
+        37.0
+      ],
+      "erros": [
+        1.593508541584015,
+        5.093508541584015,
+        1.593508541584015,
+        2.593508541584015
+      ],
+      "acc_5s": 96.07447446935605,
+      "acc_15s": 86.26846383141705,
+      "acc_30s": 96.07447446935605,
+      "acc_60s": 93.44966223728287,
+      "acc_media": 92.96676875185301
+    },
+    {
+      "arquivo": "mente_579.pt",
+      "id": "579",
+      "moeda": "desconhecida",
+      "geracao": 35,
+      "acertos": [
+        33.9659024477005,
+        26.9659024477005,
+        34.9659024477005,
+        24.0
+      ],
+      "erros": [
+        0.5,
+        4.0,
+        0,
+        5.51704877614975
+      ],
+      "acc_5s": 98.54929085127333,
+      "acc_15s": 87.08256603612392,
+      "acc_30s": 100.0,
+      "acc_60s": 81.30894176450454,
+      "acc_media": 91.73519966297545
+    },
+    {
+      "arquivo": "mente_574.pt",
+      "id": "574",
+      "moeda": "desconhecida",
+      "geracao": 0,
+      "acertos": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "erros": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "acc_5s": 0,
+      "acc_15s": 0,
+      "acc_30s": 0,
+      "acc_60s": 0,
+      "acc_media": 0.0
+    },
+    {
+      "arquivo": "mente_575.pt",
+      "id": "575",
+      "moeda": "desconhecida",
+      "geracao": 0,
+      "acertos": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "erros": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "acc_5s": 0,
+      "acc_15s": 0,
+      "acc_30s": 0,
+      "acc_60s": 0,
+      "acc_media": 0.0
+    },
+    {
+      "arquivo": "mente_576.pt",
+      "id": "576",
+      "moeda": "desconhecida",
+      "geracao": 0,
+      "acertos": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "erros": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "acc_5s": 0,
+      "acc_15s": 0,
+      "acc_30s": 0,
+      "acc_60s": 0,
+      "acc_media": 0.0
+    },
+    {
+      "arquivo": "mente_577.pt",
+      "id": "577",
+      "moeda": "desconhecida",
+      "geracao": 0,
+      "acertos": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "erros": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "acc_5s": 0,
+      "acc_15s": 0,
+      "acc_30s": 0,
+      "acc_60s": 0,
+      "acc_media": 0.0
+    }
+  ],
+  "estatisticas": {
+    "media_geral": 92.35098420741423,
+    "melhor_ia": "mente_578.pt",
+    "melhor_acuracia": 92.96676875185301
+  }
+}

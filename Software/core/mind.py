@@ -6,17 +6,16 @@ import time
 from collections import deque
 
 # ⭐ Importa a implementação correta baseada na configuração
-MODO_IA = os.getenv("MODO_IA", "linear")
+MODO_IA = os.getenv("MODO_IA", "pytorch")
 
 if MODO_IA == "pytorch":
-    try:
-        from Software.core.mind_pytorch import MenteTorch as MenteAgente
-        print("🤖 PyTorch ACTIVATED - Rede Neural Profunda")
-    except ImportError as e:
-        print(f"⚠️ PyTorch não disponível: {e}")
-        from Software.core.mind_linear import MenteAgenteLinear as MenteAgente
-        print("📊 Usando rede linear (fallback)")
+    
+    CAMINHO_MENTE = "data/minds.json"
+    from Software.core.mind_pytorch import MenteTorch as MenteAgente
+    print("🤖 PyTorch ACTIVATED - Rede Neural Profunda")
+    
 else:
+    CAMINHO_MENTE = "data/minds_linear.json"
     from Software.core.mind_linear import MenteAgenteLinear as MenteAgente
     print("📊 Modo Linear - IA Clássica")
 
@@ -28,8 +27,8 @@ class BancoMentes:
     Salva em data/minds.json independente do universe.json.
     """
 
-    def __init__(self, caminho: str = "data/minds.json"):
-        self.caminho = caminho             
+    def __init__(self, caminho: str = None):
+        self.caminho = caminho  or CAMINHO_MENTE           
         self.mentes = {}
         self.ultimo_id_global = 0
         self.carregar()
@@ -58,6 +57,11 @@ class BancoMentes:
         # ⭐ IMPORTANTE: Verifica se a mente tem método para_dict
         mentes_dict = {}
         for id_, m in self.mentes.items():
+            if hasattr(m, 'salvar'):
+                try:
+                    m.salvar()
+                except Exception as e:
+                    print(f"Erro ao salvar mente {id_}: {e}")
             if hasattr(m, 'para_dict'):
                 mentes_dict[str(id_)] = m.para_dict()
             else:
@@ -102,6 +106,14 @@ class BancoMentes:
                 if "pesos" in m_data:
                     mente.pesos = m_data["pesos"]
                     mente.bias = m_data.get("bias", 0)
+
+                 
+                # ⭐ CARREGA O MODELO PYTORCH
+                if hasattr(mente, 'carregar'):
+                    if mente.carregar():
+                        print(f"[Mente] Modelo PyTorch {id_} carregado")
+                    else:
+                        print(f"[Mente] Modelo PyTorch {id_} não encontrado, criando novo")
                 
                 self.mentes[id_] = mente
 

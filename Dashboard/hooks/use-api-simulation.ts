@@ -1,7 +1,6 @@
 "use client"
 
 import { useCallback, useEffect, useState, useRef } from "react"
-import type { EnergyDataPoint } from "@/components/dashboard/system-health"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 const MAX_ITEMS = 50
@@ -18,6 +17,10 @@ interface ApiStatus {
     delta?: number
     tipo?: string
     previsao?: number
+    previsao_5s?: number    // ⭐ ADICIONADO
+    previsao_15s?: number   // ⭐ ADICIONADO
+    previsao_30s?: number   // ⭐ ADICIONADO
+    previsao_60s?: number   // ⭐ ADICIONADO
     candles?: any[]
     accuracy?: number
   }>
@@ -39,6 +42,10 @@ export interface Unit {
   delta?: number
   tipo?: string
   previsao?: number
+  previsao_5s?: number    // ⭐ ADICIONADO
+  previsao_15s?: number   // ⭐ ADICIONADO
+  previsao_30s?: number   // ⭐ ADICIONADO
+  previsao_60s?: number   // ⭐ ADICIONADO
   candles?: any[]
   accuracy?: number
 }
@@ -69,6 +76,10 @@ function mapApiUnit(d: ApiStatus["dados"][0]): Unit {
     delta: d.delta,
     tipo: d.tipo,
     previsao: d.previsao ?? 0,
+    previsao_5s: (d as any).previsao_5s ?? 0,    // ⭐ ADICIONADO
+    previsao_15s: (d as any).previsao_15s ?? 0,  // ⭐ ADICIONADO
+    previsao_30s: (d as any).previsao_30s ?? 0,  // ⭐ ADICIONADO
+    previsao_60s: (d as any).previsao_60s ?? 0,  // ⭐ ADICIONADO
     candles: d.candles ?? [],
     accuracy: d.accuracy,
   }
@@ -89,26 +100,32 @@ export function useApiSimulation() {
   const [isRunning, setIsRunning] = useState(true)
   const [isConnected, setIsConnected] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
   const [units, setUnits] = useState<Unit[]>([])
   const [pulses, setPulses] = useState<Pulse[]>([])
   const [totalEnergy, setTotalEnergy] = useState(0)
-  const [chartData, setChartData] = useState<EnergyDataPoint[]>([])
-
-  const chartHistoryRef = useRef<EnergyDataPoint[]>([])
-
-  // ⭐ Controle do polling
   const [pollingPaused, setPollingPaused] = useState(false)
+  const [initialFetchDone, setInitialFetchDone] = useState(false)
 
   const fetchStatus = useCallback(async () => {
-    // ⭐ Se o polling está pausado, não faz nada
     if (pollingPaused) return
 
     try {
+      console.log("📡 Fetching status from:", `${API_BASE}/status`)
       const response = await fetch(`${API_BASE}/status`)
-      if (!response.ok) throw new Error("API não disponível")
+      
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
       const data: ApiStatus = await response.json()
+      console.log("✅ Data received:", data.dados?.length || 0, "units")
+
+      // ⭐ LOG PARA VER OS VALORES CRUS DA API
+      console.log("📦 DADOS CRUS DA API:", data.dados.map(d => ({
+        symbol: d.symbol,
+        previsao_5s: (d as any).previsao_5s,
+        previsao_15s: (d as any).previsao_15s,
+        previsao_30s: (d as any).previsao_30s,
+        previsao_60s: (d as any).previsao_60s,
+      })))
 
       setUnits(prevUnits => {
         const novos = data.dados.map(mapApiUnit)
@@ -124,39 +141,31 @@ export function useApiSimulation() {
         return Array.from(mapa.values())
       })
       
-      setPulses(data.pulsos.slice(0, MAX_ITEMS).map(mapApiPulse))
-      setTotalEnergy(data.energia_total)
+      setPulses(data.pulsos?.slice(0, MAX_ITEMS).map(mapApiPulse) || [])
+      setTotalEnergy(data.energia_total || 0)
       setIsConnected(true)
       setError(null)
-
-      const newPoint: EnergyDataPoint = {
-        time: new Date().toLocaleTimeString("pt-BR", {
-          hour: "2-digit", minute: "2-digit", second: "2-digit"
-        }),
-        energy: data.energia_total,
-        pulses: data.pulsos.length,
-      }
-
-      chartHistoryRef.current = [...chartHistoryRef.current.slice(-19), newPoint]
-      setChartData([...chartHistoryRef.current])
-    } catch {
+      setInitialFetchDone(true)
+      
+    } catch (err) {
+      console.error("❌ Fetch error:", err)
       setIsConnected(false)
       setError("Falha ao conectar com a API")
     }
   }, [pollingPaused])
 
-  // ⭐ Funções para controlar o polling
   const pausePolling = useCallback(() => {
+    console.log("⏸️ Polling paused")
     setPollingPaused(true)
   }, [])
 
   const resumePolling = useCallback(() => {
+    console.log("▶️ Polling resumed")
     setPollingPaused(false)
   }, [])
 
-  // ⭐ Força refresh manual dos dados
   const refreshUnits = useCallback(async () => {
-    // Temporariamente desativa a pausa para fazer o refresh
+    console.log("🔄 Manual refresh requested")
     const wasPaused = pollingPaused
     if (wasPaused) {
       setPollingPaused(false)
@@ -210,22 +219,37 @@ export function useApiSimulation() {
   }, [])
 
   const clearUnits = useCallback(() => {
-  // Remove todas as unidades crypto do estado local
-  setUnits(prevUnits => prevUnits.filter(u => !u.symbol && u.tipo !== "crypto"))
-  }, [])
+    console.log("🗑️ Clearing crypto units")
+    setUnits(prevUnits => prevUnits.filter(u => !u.symbol && u.tipo !== "crypto"))
+    setTimeout(() => {
+      fetchStatus()
+    }, 100)
+  }, [fetchStatus])
 
+  // ⭐ INITIAL FETCH - CRÍTICO!
   useEffect(() => {
     setMounted(true)
+    console.log("🔧 useApiSimulation mounted, fetching initial data...")
     fetchStatus()
   }, [fetchStatus])
 
-  // ⭐ Polling modificado para respeitar o pause
+  // ⭐ Polling interval
   useEffect(() => {
     if (!mounted) return
-    if (pollingPaused) return // Não inicia intervalo se estiver pausado
+    if (pollingPaused) {
+      console.log("⏸️ Polling interval not started (paused)")
+      return
+    }
     
-    const interval = setInterval(fetchStatus, POLL_INTERVAL)
-    return () => clearInterval(interval)
+    console.log("🔄 Starting polling interval")
+    const interval = setInterval(() => {
+      fetchStatus()
+    }, POLL_INTERVAL)
+    
+    return () => {
+      console.log("🛑 Clearing polling interval")
+      clearInterval(interval)
+    }
   }, [mounted, fetchStatus, pollingPaused])
 
   return {
@@ -235,7 +259,6 @@ export function useApiSimulation() {
     error,
     units,
     pulses,
-    chartData,
     totalEnergy,
     totalPulses: pulses.length,
     createUnit,
@@ -243,8 +266,8 @@ export function useApiSimulation() {
     togglePause,
     executeCommand,
     refreshUnits,
-    pausePolling,   // ⭐ NOVO - pausa o polling
-    resumePolling,  // ⭐ NOVO - retoma o polling
-    clearUnits      // ⭐ NOVO - limpa as unidades crypto do estado
+    pausePolling,
+    resumePolling,
+    clearUnits
   }
 }
