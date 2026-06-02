@@ -1,3 +1,53 @@
+# Dependências
 Dashboard/node_modules/
 node_modules/
 .next/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Modelos treinados (ARQUIVOS GRANDES)
+*.pt
+data/mentes_pytorch/
+data/verificacoes/
+data/snapshots/
+data/mentes.db
+data/usuarios.json
+data/ultimas_moedas.json
+
+# Backups
+backup_antigo/
+backup/
+*.bak
+
+# Ambiente
+.env
+.env.local
+.grpcio/
+GROQ_API_KEY.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Sistema
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Arquivos temporários
+tmp/
+temp/
+*.tmp
+EOF

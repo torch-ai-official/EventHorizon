@@ -6,10 +6,12 @@ import {
   TrendingUp, TrendingDown, Activity, 
   BarChart3, X, Trash2
 } from "lucide-react"
+
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { TradingChart } from "@/components/apps/TradingChart"
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 // ============================================
 // INTERFACES
 // ============================================
@@ -23,10 +25,21 @@ interface RawCrypto {
   tipo?: string
   candles?: any[]
   previsao?: number
+  // ✅ NOVOS HORIZONTES
   previsao_5s?: number
   previsao_15s?: number
   previsao_30s?: number
   previsao_60s?: number
+  previsao_300s?: number
+  previsao_900s?: number
+  previsao_1800s?: number
+  previsao_3600s?: number
+  previsao_18000s?: number
+  previsao_86400s?: number
+  // ✅ CONSENSO
+  consenso_curto?: number
+  consenso_medio?: number
+  consenso_longo?: number
 }
 
 interface Crypto {
@@ -37,10 +50,21 @@ interface Crypto {
   delta: number
   candles: any[]
   previsao: number
+  // ✅ NOVOS HORIZONTES
   previsao_5s?: number
   previsao_15s?: number
   previsao_30s?: number
   previsao_60s?: number
+  previsao_300s?: number
+  previsao_900s?: number
+  previsao_1800s?: number
+  previsao_3600s?: number
+  previsao_18000s?: number
+  previsao_86400s?: number
+  // ✅ CONSENSO
+  consenso_curto?: number
+  consenso_medio?: number
+  consenso_longo?: number
 }
 
 interface CryptoAppProps {
@@ -102,36 +126,31 @@ function getSignalAction(previsao: number) {
 function parseValidCryptos(rawList: RawCrypto[]): Crypto[] {
   return (rawList ?? [])
     .filter(c => c.symbol && c.price !== undefined)
-    .reduce((acc, c) => {
-      const existingIndex = acc.findIndex(a => a.symbol === c.symbol)
-      const previsao     = (c as any).previsao    ?? 0
-      const previsao_5s  = (c as any).previsao_5s  ?? previsao
-      const previsao_15s = (c as any).previsao_15s ?? previsao
-      const previsao_30s = (c as any).previsao_30s ?? previsao
-      const previsao_60s = (c as any).previsao_60s ?? previsao
-
-      const mapped: Crypto = {
-        id:          c.id,
-        symbol:      c.symbol!,
-        price:       c.price!,
-        energy:      c.energia   ?? 0,
-        delta:       c.delta     ?? 0,
-        candles:     (c as any).candles ?? [],
+    .map(c => {
+      const previsao = c.previsao ?? 0
+      return {
+        id: c.id,
+        symbol: c.symbol!,
+        price: c.price!,
+        energy: c.energia ?? 0,
+        delta: c.delta ?? 0,
+        candles: c.candles ?? [],
         previsao,
-        previsao_5s,
-        previsao_15s,
-        previsao_30s,
-        previsao_60s,
+        previsao_5s: c.previsao_5s ?? previsao,
+        previsao_15s: c.previsao_15s ?? previsao,
+        previsao_30s: c.previsao_30s ?? previsao,
+        previsao_60s: c.previsao_60s ?? previsao,
+        previsao_300s: c.previsao_300s ?? previsao,
+        previsao_900s: c.previsao_900s ?? previsao,
+        previsao_1800s: c.previsao_1800s ?? previsao,
+        previsao_3600s: c.previsao_3600s ?? previsao,
+        previsao_18000s: c.previsao_18000s ?? previsao,
+        previsao_86400s: c.previsao_86400s ?? previsao,
+        consenso_curto: c.consenso_curto ?? 0,
+        consenso_medio: c.consenso_medio ?? 0,
+        consenso_longo: c.consenso_longo ?? 0,
       }
-
-      if (existingIndex === -1) {
-        acc.push(mapped)
-      } else if (parseInt(c.id) > parseInt(acc[existingIndex].id)) {
-        acc[existingIndex] = mapped
-      }
-
-      return acc
-    }, [] as Crypto[])
+    })
 }
 
 // ============================================
@@ -197,6 +216,42 @@ export function CryptoApp({
   const positiveCount = validCryptos.filter(c => c.delta > 0).length
   const negativeCount = validCryptos.filter(c => c.delta < 0).length
   const bestSignal    = validCryptos[0] ?? null
+
+  // ============================================
+// CHATBOT STATE (adicione junto com os outros useState)
+// ============================================
+const [chatOpen, setChatOpen] = useState(false)
+const [chatMessages, setChatMessages] = useState<Array<{role: string, content: string}>>([])
+const [chatInput, setChatInput] = useState("")
+const [chatLoading, setChatLoading] = useState(false)
+
+async function sendChatMessage() {
+  if (!chatInput.trim() || chatLoading) return
+  
+  const userMsg = { role: "user", content: chatInput }
+  setChatMessages(prev => [...prev, userMsg])
+  setChatInput("")
+  setChatLoading(true)
+  
+  try {
+    const response = await fetch(`${API_BASE}/chatbot`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        pergunta: chatInput, 
+        moeda: selectedCoinForChart 
+      })
+    })
+    const data = await response.json()
+    setChatMessages(prev => [...prev, { role: "assistant", content: data.resposta || "Desculpe, não consegui processar." }])
+  } catch {
+    setChatMessages(prev => [...prev, { role: "assistant", content: "❌ Erro ao conectar com o assistente. Verifique se o servidor está rodando." }])
+  } finally {
+    setChatLoading(false)
+  }
+}
+
+  
 
   // ============================================
   // EFFECTS
@@ -578,54 +633,79 @@ export function CryptoApp({
         )
       })()}
 
-      {/* PREVISÕES MULTI-HORIZONTE - Visual Premium */}
+      {/* PREVISÕES MULTI-HORIZONTE - VERSÃO INSANA 10 HORIZONTES */}
       {selected && (
         <div className="rounded-xl bg-gradient-to-r from-secondary/50 to-secondary/30 border border-border/50 p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">PREVISÕES POR HORIZONTE</span>
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                PREVISÕES 10 HORIZONTES
+              </span>
             </div>
-            <div className="text-[10px] text-muted-foreground">
-              Baseado em {accuracyCache[selected.symbol]?.total || 0} análises
+            <div className="flex items-center gap-3 text-[10px]">
+              <span className="text-green-400">
+                C: {selected.consenso_curto?.toFixed(2)}%
+              </span>
+              <span className="text-yellow-400">
+                M: {selected.consenso_medio?.toFixed(2)}%
+              </span>
+              <span className="text-blue-400">
+                L: {selected.consenso_longo?.toFixed(2)}%
+              </span>
             </div>
           </div>
           
-          {/* Barras de previsão - Versão com PREÇO + % */}
-          <div className="grid grid-cols-4 gap-3">
+          {/* Grid 5x2 para 10 horizontes */}
+          <div className="grid grid-cols-5 gap-2">
             {[
-              { time: "5s", value: (selected as any).previsao_5s ?? selected.previsao, label: "previsao_5s" },
-              { time: "15s", value: (selected as any).previsao_15s ?? selected.previsao, label: "previsao_15s" },
-              { time: "30s", value: (selected as any).previsao_30s ?? selected.previsao, label: "previsao_30s" },
-              { time: "60s", value: (selected as any).previsao_60s ?? selected.previsao, label: "previsao_60s" },
+              { time: "5s", value: selected.previsao_5s ?? 0, type: "micro" },
+              { time: "15s", value: selected.previsao_15s ?? 0, type: "micro" },
+              { time: "30s", value: selected.previsao_30s ?? 0, type: "micro" },
+              { time: "60s", value: selected.previsao_60s ?? 0, type: "micro" },
+              { time: "5m", value: selected.previsao_300s ?? 0, type: "intraday" },
+              { time: "15m", value: selected.previsao_900s ?? 0, type: "intraday" },
+              { time: "30m", value: selected.previsao_1800s ?? 0, type: "intraday" },
+              { time: "1h", value: selected.previsao_3600s ?? 0, type: "swing" },
+              { time: "5h", value: selected.previsao_18000s ?? 0, type: "swing" },
+              { time: "1d", value: selected.previsao_86400s ?? 0, type: "position" },
             ].map((pred, i) => {
               const value = pred.value ?? 0
               const isPositive = value >= 0
               const intensidade = Math.min(1, Math.abs(value) / 2)
               const precoAlvo = selected.price * (1 + value / 100)
               
+              // Cores por tipo de horizonte
+              // Cores por tipo de horizonte
+              const typeColors: Record<string, string> = {
+                micro: isPositive ? 'rgba(0,230,118,' : 'rgba(255,61,87,',
+                intraday: isPositive ? 'rgba(0,200,255,' : 'rgba(255,100,50,',
+                swing: isPositive ? 'rgba(100,255,200,' : 'rgba(255,50,100,',
+                position: isPositive ? 'rgba(200,255,100,' : 'rgba(255,0,100,',
+              }
+              
               return (
                 <div 
                   key={i}
-                  className="rounded-xl p-3 transition-all hover:scale-105 cursor-help"
+                  className="rounded-lg p-2 transition-all hover:scale-105 cursor-help"
                   style={{
-                    background: isPositive 
-                      ? `linear-gradient(135deg, rgba(0, 230, 118, ${0.15 + intensidade * 0.3}) 0%, rgba(0, 230, 118, ${0.05}) 100%)`
-                      : `linear-gradient(135deg, rgba(255, 61, 87, ${0.15 + intensidade * 0.3}) 0%, rgba(255, 61, 87, 0.05) 100%)`,
-                    border: `1px solid ${isPositive ? '#00e676' : '#ff3d57'}`
-                  }}
+                      background: isPositive 
+                        ? `linear-gradient(135deg, ${typeColors[pred.type] as string}${0.15 + intensidade * 0.3}) 0%, rgba(0,0,0,0.3) 100%)`
+                        : `linear-gradient(135deg, ${typeColors[pred.type] as string}${0.15 + intensidade * 0.3}) 0%, rgba(0,0,0,0.3) 100%)`,
+                      border: `1px solid ${isPositive ? '#00e67640' : '#ff3d5740'}`
+                    }}
                 >
                   <div className="text-center">
-                    <div className="text-[10px] text-muted-foreground mb-1">{pred.time}</div>
-                    {/* ⭐ Mostra o PERCENTUAL */}
-                    <div className={`text-lg font-bold font-mono ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
+                    <div className="text-[9px] text-muted-foreground mb-1 font-bold">
+                      {pred.time}
+                    </div>
+                    <div className={`text-sm font-bold font-mono ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
                       {value > 0 ? "+" : ""}{value.toFixed(2)}%
                     </div>
-                    {/* ⭐ Mostra o PREÇO ALVO */}
-                    <div className="text-[10px] text-muted-foreground mt-1">
-                      ≈ ${precoAlvo.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                    <div className="text-[8px] text-muted-foreground mt-0.5">
+                      ${precoAlvo.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                     </div>
-                    <div className="h-1 w-full bg-gray-800 rounded-full mt-2 overflow-hidden">
+                    <div className="h-1 w-full bg-gray-800 rounded-full mt-1 overflow-hidden">
                       <div 
                         className={`h-full rounded-full transition-all duration-500 ${isPositive ? 'bg-green-400' : 'bg-red-400'}`}
                         style={{ width: `${Math.min(100, Math.abs(value) * 50)}%` }}
@@ -637,67 +717,31 @@ export function CryptoApp({
             })}
           </div>
           
-          {/* Footer com direção dominante */}
+          {/* Consenso Footer */}
           <div className="flex items-center justify-between pt-3 mt-2 border-t border-border/30">
             <div className="flex items-center gap-2">
               <div className={`w-2 h-2 rounded-full ${
-                (() => {
-                  const values = [
-                    (selected as any).previsao_5s,
-                    (selected as any).previsao_15s,
-                    (selected as any).previsao_30s,
-                    (selected as any).previsao_60s
-                  ].filter(v => v !== undefined)
-                  const positives = values.filter(v => v > 0).length
-                  const negatives = values.filter(v => v < 0).length
-                  return positives > negatives ? 'bg-green-400' : negatives > positives ? 'bg-red-400' : 'bg-gray-400'
-                })()
+                (selected.consenso_curto ?? 0) > 0 ? 'bg-green-400' : 
+                (selected.consenso_curto ?? 0) < 0 ? 'bg-red-400' : 'bg-gray-400'
               }`} />
               <span className="text-[10px] text-muted-foreground">
-                Tendência: {
-                  (() => {
-                    const values = [
-                      (selected as any).previsao_5s,
-                      (selected as any).previsao_15s,
-                      (selected as any).previsao_30s,
-                      (selected as any).previsao_60s
-                    ].filter(v => v !== undefined)
-                    const positives = values.filter(v => v > 0).length
-                    const negatives = values.filter(v => v < 0).length
-                    return positives > negatives ? "ALTA" : negatives > positives ? "BAIXA" : "LATERAL"
-                  })()
+                Consenso: {
+                  (selected.consenso_curto ?? 0) > 0 && 
+                  (selected.consenso_medio ?? 0) > 0 && 
+                  (selected.consenso_longo ?? 0) > 0 
+                    ? "FORTE COMPRA 🚀" 
+                    : (selected.consenso_curto ?? 0) < 0 && 
+                      (selected.consenso_medio ?? 0) < 0 && 
+                      (selected.consenso_longo ?? 0) < 0 
+                      ? "FORTE VENDA 💥" 
+                      : "DIVERGENTE ⚠️"
                 }
               </span>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1">
-                <div className="w-2 h-2 rounded-full bg-green-400" />
-                <span className="text-[9px] text-muted-foreground">
-                  {(() => {
-                    const values = [
-                      (selected as any).previsao_5s,
-                      (selected as any).previsao_15s,
-                      (selected as any).previsao_30s,
-                      (selected as any).previsao_60s
-                    ].filter(v => v !== undefined)
-                    return values.filter(v => v > 0).length
-                  })()} compras
-                </span>
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-2 h-2 rounded-full bg-red-400" />
-                <span className="text-[9px] text-muted-foreground">
-                  {(() => {
-                    const values = [
-                      (selected as any).previsao_5s,
-                      (selected as any).previsao_15s,
-                      (selected as any).previsao_30s,
-                      (selected as any).previsao_60s
-                    ].filter(v => v !== undefined)
-                    return values.filter(v => v < 0).length
-                  })()} vendas
-                </span>
-              </div>
+            <div className="flex items-center gap-3 text-[9px]">
+              <span className="text-green-400/70">C</span>
+              <span className="text-yellow-400/70">M</span>
+              <span className="text-blue-400/70">L</span>
             </div>
           </div>
         </div>
@@ -779,6 +823,15 @@ export function CryptoApp({
             prediction15s={selected.previsao_15s}
             prediction30s={selected.previsao_30s}
             prediction60s={selected.previsao_60s}
+            prediction300s={selected.previsao_300s}
+            prediction900s={selected.previsao_900s}
+            prediction1800s={selected.previsao_1800s}
+            prediction3600s={selected.previsao_3600s}
+            prediction18000s={selected.previsao_18000s}
+            prediction86400s={selected.previsao_86400s}
+            consensoCurto={selected.consenso_curto}
+            consensoMedio={selected.consenso_medio}
+            consensoLongo={selected.consenso_longo}
             timeframe={timeframe}
             symbol={selected.symbol}
             isActive={isRunning}
@@ -1008,6 +1061,7 @@ export function CryptoApp({
         </div>
       )}
 
+
       {/* Performance Report Modal */}
       {showReportModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 overflow-auto">
@@ -1075,6 +1129,7 @@ export function CryptoApp({
           </div>
         </div>
       )}
+
 
     </div>
   )

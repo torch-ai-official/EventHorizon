@@ -7,6 +7,7 @@ import { DashboardTab } from "@/components/tabs/dashboard-tab"
 import { CryptoApp } from "@/components/apps/crypto-app"
 import { useApiSimulation } from "@/hooks/use-api-simulation"
 import { cn } from "@/lib/utils"
+import { ChatBot } from "@/components/apps/ChatBot"
 
 export default function UniverseOS() {
   const {
@@ -183,6 +184,7 @@ export default function UniverseOS() {
         <footer className="text-center text-xs text-muted-foreground py-4 mt-6 border-t border-border/30">
           <p>TRADER AI • Sistema de Trading com Inteligência Adaptativa</p>
         </footer>
+        <ChatBot />
       </div>
     </main>
   )

@@ -10,7 +10,7 @@ import {
 import { SignalCard } from "@/components/dashboard/signal-card"
 import { SignalsPanel } from "@/components/dashboard/signals-panel"
 import { TraderMetrics } from "@/components/dashboard/TraderMetrics"
-import { useTraderStats } from "@/hooks/useTraderStats"
+import { useCryptoStats } from "@/hooks/useCryptoStats"  // ⭐ NOVO
 
 interface Unit {
   id: string
@@ -45,8 +45,8 @@ export function DashboardTab({
   onTogglePause,
 }: DashboardTabProps) {
   
-  // Busca dados reais do SQL
-  const { stats, loading } = useTraderStats()
+  // ⭐ Agora usando dados reais das mentes PyTorch
+  const { stats, loading } = useCryptoStats()
   
   // Filtra apenas moedas crypto
   const cryptos = useMemo(
@@ -81,14 +81,10 @@ export function DashboardTab({
   const negativeCount = cryptos.filter(c => (c.previsao ?? 0) < -0.5).length
   const neutralCount = cryptos.length - positiveCount - negativeCount
 
-  // Acurácia média dos sinais atuais
-  const avgAccuracy = useMemo(() => {
-    const accuracies = cryptos.map(c => (c as any).accuracy).filter(Boolean)
-    if (accuracies.length === 0) return stats.acuracia_geral || 0
-    return Math.round(accuracies.reduce((a: number, b: number) => a + b, 0) / accuracies.length * 100)
-  }, [cryptos, stats.acuracia_geral])
+  // ⭐ Acurácia média vinda do SQL/mentes PyTorch
+  const avgAccuracy = stats.acuracia_geral || 0
 
-  // Performance por moeda (vem do SQL)
+  // Performance por moeda (vem das mentes PyTorch via API)
   const performanceByCoin = stats.performance_moedas || []
   const bestCoin = performanceByCoin[0]
   
@@ -96,7 +92,7 @@ export function DashboardTab({
   const melhoresHorarios = stats.melhores_horarios || []
   const pioresHorarios = stats.piores_horarios || []
   
-  // Total de trades do SQL
+  // Total de trades
   const totalTrades = stats.total_previsoes || 0
 
   return (
@@ -123,13 +119,13 @@ export function DashboardTab({
           trendText={dominantConfidence > 60 ? "Alta confianca" : dominantConfidence > 40 ? "Media" : "Baixa confianca"}
         />
 
-        {/* Card 3: Acuracia Geral (do SQL) */}
+        {/* Card 3: Acuracia Geral (das mentes PyTorch) */}
         <SignalCard
           label="ACURACIA GERAL"
-          value={`${stats.acuracia_geral || 0}%`}
+          value={`${avgAccuracy}%`}
           sub={`Baseado em ${totalTrades} analises`}
           icon={BarChart3}
-          accent={stats.acuracia_geral > 55 ? "green" : stats.acuracia_geral > 45 ? "amber" : "red"}
+          accent={avgAccuracy > 55 ? "green" : avgAccuracy > 45 ? "amber" : "red"}
         />
 
         {/* Card 4: Posicao do Mercado */}
@@ -149,21 +145,21 @@ export function DashboardTab({
           <SignalsPanel units={cryptos} />
         </div>
 
-        {/* Metricas do SQL */}
+        {/* Metricas */}
         <div>
           <TraderMetrics 
-            accuracy={stats.acuracia_geral || 0}
+            accuracy={avgAccuracy}
             bestTime={melhoresHorarios[0]?.hora || "14:00"}
             worstTime={pioresHorarios[0]?.hora || "12:00"}
             totalTrades={totalTrades}
-            winRate={stats.acuracia_geral || 0}
+            winRate={avgAccuracy}
           />
         </div>
       </div>
 
       {/* LINHA 3: PERFORMANCE + MELHORES HORARIOS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Performance por Moeda (do SQL) */}
+        {/* Performance por Moeda (das mentes PyTorch) */}
         <div className="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold flex items-center gap-2">
@@ -214,12 +210,12 @@ export function DashboardTab({
           )}
           {loading && (
             <div className="text-center py-8 text-muted-foreground text-sm">
-              Carregando dados do SQL...
+              Carregando dados das IAs...
             </div>
           )}
         </div>
 
-        {/* Melhores Horarios para Trade (do SQL) */}
+        {/* Melhores Horarios para Trade */}
         <div className="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-5">
           <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
             <Clock className="h-4 w-4 text-cyan-400" />
@@ -269,7 +265,7 @@ export function DashboardTab({
 
             <div className="pt-2 text-center">
               <p className="text-[10px] text-muted-foreground">
-                Baseado em {totalTrades} previsoes registradas no SQL
+                Baseado em {totalTrades} previsoes registradas
               </p>
             </div>
           </div>
@@ -277,7 +273,7 @@ export function DashboardTab({
       </div>
 
       {/* LINHA 4: DICA DO DIA */}
-      {bestCoin && bestCoin.acuracia > 70 && (
+      {bestCoin && bestCoin.acuracia > 55 && (
         <div className="rounded-xl bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/30 p-4">
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-500/20">

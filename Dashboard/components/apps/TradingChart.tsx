@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState } from "react"
-import { createChart, CrosshairMode, LineStyle, IChartApi, ISeriesApi, UTCTimestamp, CandlestickSeries, LineSeries, AreaSeries } from "lightweight-charts"
+import { useEffect, useRef, useState, useMemo } from "react"
+import {
+  createChart, CrosshairMode, LineStyle,
+  IChartApi, ISeriesApi, UTCTimestamp,
+  CandlestickSeries, LineSeries, AreaSeries,
+} from "lightweight-charts"
 
 interface Candle {
-  time: number
-  open: number
-  high: number
-  low: number
-  close: number
+  time: number; open: number; high: number; low: number; close: number
 }
 
+// No arquivo TradingChart.tsx, atualize a interface:
 interface TradingChartProps {
   candles: Candle[]
   currentPrice: number
@@ -17,6 +18,17 @@ interface TradingChartProps {
   prediction15s?: number
   prediction30s?: number
   prediction60s?: number
+  // ✅ NOVOS HORIZONTES
+  prediction300s?: number
+  prediction900s?: number
+  prediction1800s?: number
+  prediction3600s?: number
+  prediction18000s?: number
+  prediction86400s?: number
+  // ✅ CONSENSO
+  consensoCurto?: number
+  consensoMedio?: number
+  consensoLongo?: number
   timeframe?: number
   symbol?: string
   isActive?: boolean
@@ -24,34 +36,35 @@ interface TradingChartProps {
   showIndicators?: boolean
 }
 
-function safeTime(t: any): UTCTimestamp {
-  return Math.floor(Number(t)) as UTCTimestamp
+function safeTime(t: any): UTCTimestamp { return Math.floor(Number(t)) as UTCTimestamp }
+
+function formatBRTime(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit", month: "2-digit", year: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+  })
 }
 
 function calcEMA(data: Candle[], period: number) {
   const k = 2 / (period + 1)
-  const result: { time: number; value: number }[] = []
   let ema = data[0]?.close ?? 0
-  for (const c of data) {
+  return data.map(c => {
     ema = c.close * k + ema * (1 - k)
-    result.push({ time: safeTime(c.time), value: parseFloat(ema.toFixed(4)) })
-  }
-  return result
+    return { time: safeTime(c.time), value: parseFloat(ema.toFixed(4)) }
+  })
 }
 
 function calcBollinger(data: Candle[], period = 20, mult = 2) {
-  const upper: { time: number; value: number }[] = []
-  const lower: { time: number; value: number }[] = []
-  const mid: { time: number; value: number }[] = []
-  for (let i = 0; i < data.length; i++) {
-    if (i < period - 1) continue
+  const upper: any[] = [], lower: any[] = [], mid: any[] = []
+  for (let i = period - 1; i < data.length; i++) {
     const slice = data.slice(i - period + 1, i + 1).map(c => c.close)
     const mean = slice.reduce((a, b) => a + b, 0) / period
-    const variance = slice.reduce((a, b) => a + (b - mean) ** 2, 0) / period
-    const sd = Math.sqrt(variance)
-    upper.push({ time: safeTime(data[i].time), value: parseFloat((mean + mult * sd).toFixed(4)) })
-    lower.push({ time: safeTime(data[i].time), value: parseFloat((mean - mult * sd).toFixed(4)) })
-    mid.push({ time: safeTime(data[i].time), value: parseFloat(mean.toFixed(4)) })
+    const sd = Math.sqrt(slice.reduce((a, b) => a + (b - mean) ** 2, 0) / period)
+    const t = safeTime(data[i].time)
+    upper.push({ time: t, value: parseFloat((mean + mult * sd).toFixed(4)) })
+    lower.push({ time: t, value: parseFloat((mean - mult * sd).toFixed(4)) })
+    mid.push({ time: t, value: parseFloat(mean.toFixed(4)) })
   }
   return { upper, lower, mid }
 }
@@ -61,271 +74,249 @@ function calcRSI(data: Candle[], period = 14): number {
   const closes = data.slice(-(period + 1)).map(c => c.close)
   let gains = 0, losses = 0
   for (let i = 1; i < closes.length; i++) {
-    const diff = closes[i] - closes[i - 1]
-    if (diff >= 0) gains += diff
-    else losses -= diff
+    const d = closes[i] - closes[i - 1]
+    if (d >= 0) gains += d; else losses -= d
   }
-  const rs = gains / (losses || 1)
-  return parseFloat((100 - 100 / (1 + rs)).toFixed(2))
+  return parseFloat((100 - 100 / (1 + gains / (losses || 1))).toFixed(2))
 }
 
-// ⭐ Função para gerar velas futuras (INDEPENDENTES - cada horizonte baseado no preço atual)
+// Seeds baseadas apenas no bucketBase — estáveis durante o bucket inteiro
 function gerarVelasFuturas(
-  currentPrice: number,
-  currentTime: number,
-  timeframe: number,
-  predictions: { time: number; value: number }[]
+  price: number,
+  bucketBase: number,
+  preds: { time: number; value: number }[],
+  atr: number
 ): Candle[] {
-  const velasFuturas: Candle[] = []
-  const now = Math.floor(currentTime / 1000)
-  const currentBucket = now - (now % timeframe)
-  
-  for (let i = 0; i < predictions.length; i++) {
-    const pred = predictions[i]
-    const tempoFuturo = currentBucket + pred.time
-    
-    const variacaoPercentual = pred.value / 100
-    const precoFuturo = currentPrice * (1 + variacaoPercentual)
-    
-    const bodySize = Math.abs(precoFuturo - currentPrice)
-    const wickSize = bodySize * 0.15
-    
-    velasFuturas.push({
-      time: tempoFuturo,
-      open: currentPrice,
-      high: Math.max(currentPrice, precoFuturo) + wickSize,
-      low: Math.min(currentPrice, precoFuturo) - wickSize,
-      close: precoFuturo,
-    })
-  }
-  
-  return velasFuturas
+  const baseVol = Math.max(atr, price * 0.0005)
+  return preds.map((pred, i) => {
+    const predictedClose = price * (1 + pred.value / 100)
+    const body = Math.max(Math.abs(predictedClose - price), price * 0.00005)
+    const seed = (((bucketBase + pred.time) * (i + 13) * 811) % 1009) / 1009
+    const wickHigh = baseVol * (0.35 + seed * 0.45 + i * 0.08) + body * 0.45 + price * 0.00012
+    const wickLow  = baseVol * (0.25 + (1 - seed) * 0.5 + (i + 1) * 0.06) + body * 0.28 + price * 0.00009
+    return {
+      time: bucketBase + pred.time,
+      open: price,
+      high: Math.max(price, predictedClose) + wickHigh,
+      low:  Math.min(price, predictedClose) - wickLow,
+      close: predictedClose,
+    }
+  })
 }
 
-export function TradingChart({ 
-  candles, 
-  currentPrice, 
-  prediction, 
-  prediction5s, 
-  prediction15s, 
-  prediction30s, 
-  prediction60s, 
-  timeframe = 5, 
-  symbol = "BTCUSDT", 
-  isActive = true, 
-  chartType = "candlestick", 
-  showIndicators = true 
+function gerarLinhaFutura(
+  price: number,
+  bucketBase: number,
+  preds: { time: number; value: number }[]
+): { time: UTCTimestamp; value: number }[] {
+  return [
+    { time: safeTime(bucketBase), value: price },
+    ...preds.map(p => ({ time: safeTime(bucketBase + p.time), value: price * (1 + p.value / 100) })),
+  ]
+}
+
+export function TradingChart({
+  candles, currentPrice, prediction,
+  prediction5s, prediction15s, prediction30s, prediction60s,
+  prediction300s, prediction900s, prediction1800s, 
+  prediction3600s, prediction18000s, prediction86400s,
+  consensoCurto, consensoMedio, consensoLongo,
+  timeframe = 5, symbol = "BTCUSDT", isActive = true,
+  chartType = "candlestick", showIndicators = true,
 }: TradingChartProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const chartRef = useRef<IChartApi | null>(null)
-  const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null)
-  const ema9Ref = useRef<ISeriesApi<"Line"> | null>(null)
-  const ema21Ref = useRef<ISeriesApi<"Line"> | null>(null)
-  const bbUpperRef = useRef<ISeriesApi<"Line"> | null>(null)
-  const bbLowerRef = useRef<ISeriesApi<"Line"> | null>(null)
-  const bbMidRef = useRef<ISeriesApi<"Line"> | null>(null)
-  
-  const animationIntervalRef = useRef<NodeJS.Timeout | null>(null)
-  const targetPriceRef = useRef<number>(currentPrice)
-  const currentAnimatedPriceRef = useRef<number>(currentPrice)
-  
-  const [hoverOHLC, setHoverOHLC] = useState<Candle | null>(null)
-  const [rsi, setRsi] = useState(50)
-  const [lastPrice, setLastPrice] = useState<number | null>(null)
-  const [priceChange, setPriceChange] = useState(0)
-  const [currentCandleTime, setCurrentCandleTime] = useState<number | null>(null)
+  const containerRef      = useRef<HTMLDivElement>(null)
   const containerOuterRef = useRef<HTMLDivElement>(null)
+  const chartRef          = useRef<IChartApi | null>(null)
+  const candleSeriesRef   = useRef<ISeriesApi<"Candlestick"> | ISeriesApi<"Line"> | ISeriesApi<"Area"> | null>(null)
+  const ema9Ref           = useRef<ISeriesApi<"Line"> | null>(null)
+  const ema21Ref          = useRef<ISeriesApi<"Line"> | null>(null)
+  const bbUpperRef        = useRef<ISeriesApi<"Line"> | null>(null)
+  const bbLowerRef        = useRef<ISeriesApi<"Line"> | null>(null)
+  const bbMidRef          = useRef<ISeriesApi<"Line"> | null>(null)
+  const futureCandlesRef  = useRef<ISeriesApi<"Candlestick"> | null>(null)
+  const futureLineRef     = useRef<ISeriesApi<"Line"> | null>(null)
+  const futureCandleTimesRef = useRef<Map<number, { label: string; price: number; change: number }>>(new Map())
+
+  const animIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const targetPriceRef  = useRef(currentPrice)
+  const animPriceRef    = useRef(currentPrice)
+
+  // Vela em construção: acumula high/low REAL tick a tick
+  // Isso é o que dá pavios verdadeiros (range de preço no período)
+  const liveCandleRef = useRef<{
+    bucket: number; open: number; high: number; low: number
+  } | null>(null)
+
+  // Refs estáveis para closures do interval
+  const candlesRef = useRef(candles)
+  const tfRef      = useRef(timeframe)
+  const ctRef      = useRef(chartType)
+  const isFirstFutureDataRef = useRef(true)
+  useEffect(() => { candlesRef.current = candles }, [candles])
+  useEffect(() => { tfRef.current = timeframe    }, [timeframe])
+  useEffect(() => { ctRef.current = chartType    }, [chartType])
+
+  const [hoverOHLC,    setHoverOHLC]    = useState<Candle | null>(null)
+  const [rsi,          setRsi]          = useState(50)
+  const [lastPrice,    setLastPrice]    = useState<number | null>(null)
+  const [priceChange,  setPriceChange]  = useState(0)
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const futureCandlesRef = useRef<ISeriesApi<"Candlestick"> | null>(null)
-  const predictions = [
-    { time: 5, value: prediction5s ?? prediction },
-    { time: 15, value: prediction15s ?? prediction },
-    { time: 30, value: prediction30s ?? prediction },
-    { time: 60, value: prediction60s ?? prediction },
-  ].filter(p => p.value !== undefined)
-  
-  const toggleFullscreen = async () => {
-    if (!containerOuterRef.current) return
-    if (!isFullscreen) {
-      await containerOuterRef.current.requestFullscreen()
-      setIsFullscreen(true)
-    } else {
-      await document.exitFullscreen()
-      setIsFullscreen(false)
-    }
-  }
+  const [futureTooltip, setFutureTooltip] = useState<{
+    x: number; y: number; visible: boolean
+    label: string; price: number; change: number; time: string
+  }>({ x: 0, y: 0, visible: false, label: "", price: 0, change: 0, time: "" })
 
-  
+  const predictions = useMemo(() => [
+  { time: 5,     value: prediction5s     ?? prediction },
+  { time: 15,    value: prediction15s    ?? prediction },
+  { time: 30,    value: prediction30s    ?? prediction },
+  { time: 60,    value: prediction60s    ?? prediction },
+  { time: 300,   value: prediction300s   ?? prediction },
+  { time: 900,   value: prediction900s   ?? prediction },
+  { time: 1800,  value: prediction1800s  ?? prediction },
+  { time: 3600,  value: prediction3600s  ?? prediction },
+  { time: 18000, value: prediction18000s ?? prediction },
+  { time: 86400, value: prediction86400s ?? prediction },
+], [prediction, prediction5s, prediction15s, prediction30s, prediction60s,
+    prediction300s, prediction900s, prediction1800s, prediction3600s, prediction18000s, prediction86400s])
 
+  const atr = useMemo(() => {
+    const w = candles.slice(-14)
+    if (w.length === 0) return currentPrice * 0.001
+    const vals = w.map(c => c.high - c.low)
+    return vals.reduce((a, b) => a + b, 0) / vals.length
+  }, [candles, currentPrice])
+
+  // ── Fullscreen ─────────────────────────────────────────────────────────
   useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement)
+    const handler = () => {
+      const fs = !!document.fullscreenElement
+      setIsFullscreen(fs)
       setTimeout(() => {
-        chartRef.current?.applyOptions({ 
-          width: containerOuterRef.current?.clientWidth || 0,
-          height: isFullscreen ? window.innerHeight - 180 : 600
+        chartRef.current?.applyOptions({
+          width:  containerRef.current?.clientWidth || 0,
+          height: fs ? window.innerHeight - 180 : 600,
         })
       }, 100)
     }
-    document.addEventListener('fullscreenchange', handleFullscreenChange)
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
-  }, [isFullscreen])
+    document.addEventListener("fullscreenchange", handler)
+    return () => document.removeEventListener("fullscreenchange", handler)
+  }, [])
 
-  useEffect(() => {
-    targetPriceRef.current = currentPrice
-  }, [currentPrice])
+  useEffect(() => { targetPriceRef.current = currentPrice }, [currentPrice])
 
+  // ── Animação: high/low real acumulado no liveCandleRef ─────────────────
   useEffect(() => {
     if (!isActive) {
-      if (animationIntervalRef.current) {
-        clearInterval(animationIntervalRef.current)
-        animationIntervalRef.current = null
-      }
+      if (animIntervalRef.current) clearInterval(animIntervalRef.current)
+      animIntervalRef.current = null
       return
     }
+    if (animIntervalRef.current) clearInterval(animIntervalRef.current)
 
-    if (animationIntervalRef.current) {
-      clearInterval(animationIntervalRef.current)
-    }
-
-    animationIntervalRef.current = setInterval(() => {
+    animIntervalRef.current = setInterval(() => {
       if (!candleSeriesRef.current) return
-      
-      const diff = targetPriceRef.current - currentAnimatedPriceRef.current
-      if (Math.abs(diff) < 0.01) {
-        currentAnimatedPriceRef.current = targetPriceRef.current
-      } else {
-        currentAnimatedPriceRef.current += diff * 0.3
-      }
-      
-      const animatedPrice = currentAnimatedPriceRef.current
-      const now = Math.floor(Date.now() / 1000)
-      const bucketTime = now - (now % timeframe)
-      
-      const existingCandle = candles.find(c => c.time === bucketTime)
-      
-      if (chartType === "candlestick") {
-        if (existingCandle) {
+
+      const diff = targetPriceRef.current - animPriceRef.current
+      animPriceRef.current += Math.abs(diff) < 0.01 ? diff : diff * 0.3
+      const p = animPriceRef.current
+
+      const now    = Math.floor(Date.now() / 1000)
+      const bucket = now - (now % tfRef.current)
+
+      if (ctRef.current === "candlestick") {
+        const existing = candlesRef.current.find(c =>
+          c.time === bucket || (c.time - (c.time % tfRef.current)) === bucket
+        )
+
+        if (existing) {
+          // Bucket fechado do backend: usa high/low reais
           candleSeriesRef.current!.update({
-            time: safeTime(bucketTime),
-            open: existingCandle.open,
-            high: Math.max(existingCandle.high, animatedPrice),
-            low: Math.min(existingCandle.low, animatedPrice),
-            close: animatedPrice,
+            time: safeTime(bucket), open: existing.open,
+            high: Math.max(existing.high, p), low: Math.min(existing.low, p), close: p,
           })
+          if (liveCandleRef.current?.bucket !== bucket) {
+            liveCandleRef.current = { bucket, open: p, high: p, low: p }
+          }
         } else {
+          // Bucket em construção: acumula high/low real tick a tick
+          if (!liveCandleRef.current || liveCandleRef.current.bucket !== bucket) {
+            liveCandleRef.current = { bucket, open: p, high: p, low: p }
+          } else {
+            liveCandleRef.current.high = Math.max(liveCandleRef.current.high, p)
+            liveCandleRef.current.low  = Math.min(liveCandleRef.current.low,  p)
+          }
+          const lc = liveCandleRef.current
           candleSeriesRef.current!.update({
-            time: safeTime(bucketTime),
-            open: animatedPrice,
-            high: animatedPrice,
-            low: animatedPrice,
-            close: animatedPrice,
+            time: safeTime(bucket), open: lc.open,
+            high: lc.high, low: lc.low, close: p,
           })
         }
       } else {
-        const lineSeries = candleSeriesRef.current as unknown as ISeriesApi<"Line">
-        lineSeries.update({
-          time: safeTime(bucketTime),
-          value: animatedPrice,
-        })
+        ;(candleSeriesRef.current as any).update({ time: safeTime(bucket), value: p })
       }
-      
-      setLastPrice(animatedPrice)
-     // chartRef.current?.timeScale().scrollToRealTime()
+
+      setLastPrice(p)
     }, 50)
 
-    return () => {
-      if (animationIntervalRef.current) {
-        clearInterval(animationIntervalRef.current)
-        animationIntervalRef.current = null
+    return () => { if (animIntervalRef.current) clearInterval(animIntervalRef.current) }
+  }, [isActive])
+
+  // ✅ NOVO: Ajusta a escala de preço baseado no timeframe
+useEffect(() => {
+  if (!chartRef.current || !candleSeriesRef.current) return
+
+  const now = Date.now() / 1000
+  const candles = candlesRef.current
+  const recentCandles = candles.filter(c => c.time > now - 300) // últimas 5 min
+
+  if (recentCandles.length >= 2) {
+    const highs = recentCandles.map(c => c.high)
+    const lows = recentCandles.map(c => c.low)
+    const maxHigh = Math.max(...highs)
+    const minLow = Math.min(...lows)
+    const range = maxHigh - minLow
+
+    if (timeframe <= 5 && range > 0) {
+      // Para timeframes baixos, faz zoom nos candles
+      const padding = range * 0.2 // 20% de margem
+      chartRef.current.priceScale("right").applyOptions({
+        autoScale: false,
+      })
+      
+      // Ajusta o range visível para focar nos candles
+      if (candleSeriesRef.current) {
+        const series = candleSeriesRef.current as ISeriesApi<"Candlestick">
+        // Não usamos setVisibleRange para price scale, apenas ajustamos o autoScale
+        chartRef.current.priceScale("right").applyOptions({
+          autoScale: true,
+          scaleMargins: {
+            top: 0.3,    // Mais espaço no topo
+            bottom: 0.3, // Mais espaço embaixo
+          },
+        })
       }
-    }
-  }, [isActive, timeframe, candles, chartType])
-
-  useEffect(() => {
-    if (!chartRef.current) return
-
-    if (candleSeriesRef.current) {
-      chartRef.current.removeSeries(candleSeriesRef.current)
-      candleSeriesRef.current = null
-    }
-
-    let newSeries: any = null
-    
-    if (chartType === "candlestick") {
-      newSeries = chartRef.current.addSeries(CandlestickSeries, {
-        upColor: "#00e676",
-        downColor: "#ff3d57",
-        borderUpColor: "#00e676",
-        borderDownColor: "#ff3d57",
-        wickUpColor: "#00a854",
-        wickDownColor: "#cc2d44",
-      })
-    } else if (chartType === "line") {
-      newSeries = chartRef.current.addSeries(LineSeries, {
-        color: "#38bdf8",
-        lineWidth: 2,
-        priceLineVisible: true,
-        lastValueVisible: true,
-      })
     } else {
-      newSeries = chartRef.current.addSeries(AreaSeries, {
-        topColor: "rgba(0, 230, 118, 0.4)",
-        bottomColor: "rgba(0, 230, 118, 0.0)",
-        lineColor: "#00e676",
-        lineWidth: 2,
-        crosshairMarkerVisible: true,
-        crosshairMarkerRadius: 4,
-        crosshairMarkerBorderColor: "#00e676",
-        crosshairMarkerBackgroundColor: "#1a2a3a",
+      // Para timeframes maiores, escala normal
+      chartRef.current.priceScale("right").applyOptions({
+        autoScale: true,
+        scaleMargins: {
+          top: 0.08,
+          bottom: 0.08,
+        },
       })
     }
+  }
+}, [timeframe, candles])
 
-    candleSeriesRef.current = newSeries
-
-    const now = Math.floor(Date.now() / 1000)
-    const bucketTime = now - (now % timeframe)
-    
-    const closedCandles = candles
-      .filter(c => c.time < bucketTime)
-      .sort((a, b) => a.time - b.time)
-
-    if (closedCandles.length > 0) {
-      if (chartType === "candlestick") {
-        newSeries.setData(
-          closedCandles.map(c => ({
-            time: safeTime(c.time),
-            open: c.open,
-            high: Math.max(c.open, c.high, c.close),
-            low: Math.min(c.open, c.low, c.close),
-            close: c.close,
-          }))
-        )
-      } else {
-        newSeries.setData(
-          closedCandles.map(c => ({
-            time: safeTime(c.time),
-            value: c.close,
-          }))
-        )
-      }
-    }
-
-  }, [chartType, timeframe, candles])
-
-  useEffect(() => {
-    currentAnimatedPriceRef.current = currentPrice
-  }, [timeframe, currentPrice])
-
+  // ── Init do chart ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!containerRef.current) return
 
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { color: "#060b14" },
-        textColor: "#8b9ab0",
-        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-        fontSize: 11,
+        background: { color: "#060b14" }, textColor: "#8b9ab0",
+        fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 11,
       },
       grid: {
         vertLines: { color: "#0d1520", style: LineStyle.Solid },
@@ -336,72 +327,148 @@ export function TradingChart({
         vertLine: { color: "#2a3a54", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1a2a3a" },
         horzLine: { color: "#2a3a54", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1a2a3a" },
       },
-      rightPriceScale: { borderColor: "#0d1a28", scaleMargins: { top: 0.08, bottom: 0.08 }, textColor: "#4a6a8a" },
+      rightPriceScale: {
+        borderColor: "#0d1a28",
+        scaleMargins: { top: 0.08, bottom: 0.08 },
+        textColor: "#4a6a8a",
+        // autoScale controla apenas a série principal — séries futuras usam escala própria
+        autoScale: true,
+      },
       timeScale: {
         borderColor: "#0d1a28",
         timeVisible: true,
         secondsVisible: timeframe < 60,
-        tickMarkFormatter: (time: number) => {
-          const d = new Date(time * 1000)
-          const h = d.getHours().toString().padStart(2, "0")
-          const m = d.getMinutes().toString().padStart(2, "0")
-          const s = d.getSeconds().toString().padStart(2, "0")
-          return timeframe < 60 ? `${h}:${m}:${s}` : `${h}:${m}`
+        rightBarStaysOnScroll: true,
+        lockVisibleTimeRangeOnResize: true,
+        // CORREÇÃO A: sem fixRightEdge — ele é o responsável pelo auto-scroll
+        // quando dados com timestamp futuro chegam. Usamos rightOffset em vez disso.
+        fixRightEdge: false,
+        rightOffset: 20, // deixa 12 barras de espaço à direita para as previsões
+        tickMarkFormatter: (t: number, tickMarkType: number) => {
+          const d = new Date(t * 1000)
+          const opts: Intl.DateTimeFormatOptions = { timeZone: "America/Sao_Paulo", hour12: false }
+          if (tickMarkType <= 2)  return d.toLocaleDateString("pt-BR",  { ...opts, day: "2-digit", month: "2-digit" })
+          if (tickMarkType === 4) return d.toLocaleTimeString("pt-BR",  { ...opts, hour: "2-digit", minute: "2-digit", second: "2-digit" })
+          return d.toLocaleTimeString("pt-BR", { ...opts, hour: "2-digit", minute: "2-digit" })
         },
       },
-      width: containerRef.current.clientWidth,
+      localization: { timeFormatter: (t: number) => formatBRTime(t) },
+      width:  containerRef.current.clientWidth,
       height: 600,
+      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true },
+      handleScale:  { mouseWheel: true, pinch: true, axisPressedMouseMove: true },
     })
 
-    let mainSeries: any = null
-    
+    // Série principal
+    let main: any
     if (chartType === "candlestick") {
-      mainSeries = chart.addSeries(CandlestickSeries, {
+      main = chart.addSeries(CandlestickSeries, {
         upColor: "#00e676", downColor: "#ff3d57",
         borderUpColor: "#00e676", borderDownColor: "#ff3d57",
         wickUpColor: "#00a854", wickDownColor: "#cc2d44",
       })
     } else if (chartType === "line") {
-      mainSeries = chart.addSeries(LineSeries, {
-        color: "#38bdf8",
-        lineWidth: 2,
-        priceLineVisible: true,
-        lastValueVisible: true,
+      main = chart.addSeries(LineSeries, {
+        color: "#38bdf8", lineWidth: 2, priceLineVisible: true, lastValueVisible: true,
       })
-    } else if (chartType === "area") {
-      mainSeries = chart.addSeries(AreaSeries, {
-        topColor: "rgba(0, 230, 118, 0.4)",
-        bottomColor: "rgba(0, 230, 118, 0.0)",
-        lineColor: "#00e676",
-        lineWidth: 2,
-        crosshairMarkerVisible: true,
-        crosshairMarkerRadius: 4,
-        crosshairMarkerBorderColor: "#00e676",
+    } else {
+      main = chart.addSeries(AreaSeries, {
+        topColor: "rgba(0,230,118,0.4)", bottomColor: "rgba(0,230,118,0.0)",
+        lineColor: "#00e676", lineWidth: 2, crosshairMarkerVisible: true,
+        crosshairMarkerRadius: 4, crosshairMarkerBorderColor: "#00e676",
         crosshairMarkerBackgroundColor: "#1a2a3a",
       })
     }
-
-    candleSeriesRef.current = mainSeries
+    candleSeriesRef.current = main
 
     if (showIndicators) {
-      ema9Ref.current = chart.addSeries(LineSeries, { 
-        color: "#f59e0b", lineWidth: 1, priceLineVisible: false, lastValueVisible: false 
+      ema9Ref.current    = chart.addSeries(LineSeries, { color: "#f59e0b", lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
+      ema21Ref.current   = chart.addSeries(LineSeries, { color: "#38bdf8", lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
+      bbUpperRef.current = chart.addSeries(LineSeries, { color: "rgba(100,120,200,0.4)", lineWidth: 1, lineStyle: LineStyle.Dashed })
+      bbLowerRef.current = chart.addSeries(LineSeries, { color: "rgba(100,120,200,0.4)", lineWidth: 1, lineStyle: LineStyle.Dashed })
+      bbMidRef.current   = chart.addSeries(LineSeries, { color: "rgba(100,120,200,0.2)", lineWidth: 1, lineStyle: LineStyle.Dotted })
+    }
+
+    // CORREÇÃO B: séries futuras em priceScaleId separado ("future")
+    // Isso impede que os preços futuros participem do autoscale da série principal.
+    // Sem isso, o chart expande o eixo Y para incluir os preços futuros,
+    // comprimindo visualmente as velas históricas e fazendo os pavios parecerem iguais.
+    if (chartType === "candlestick") {
+      futureCandlesRef.current = chart.addSeries(CandlestickSeries, {
+        priceScaleId: "future",           // ← escala separada, não afeta a principal
+        upColor:        "rgba(0,230,118,0.3)", downColor:       "rgba(255,61,87,0.3)",
+        borderUpColor:  "rgba(0,230,118,0.6)", borderDownColor: "rgba(255,61,87,0.6)",
+        wickUpColor:    "rgba(0,168,84,0.3)",  wickDownColor:   "rgba(204,45,68,0.3)",
+        priceLineVisible: false, lastValueVisible: false,
       })
-      ema21Ref.current = chart.addSeries(LineSeries, { 
-        color: "#38bdf8", lineWidth: 1, priceLineVisible: false, lastValueVisible: false 
+      // Esconde a escala "future" para não aparecer uma régua extra
+      chart.priceScale("future").applyOptions({
+        scaleMargins: { top: 0.08, bottom: 0.08 },
+        visible: false,                   // ← esconde o eixo de preço lateral
+        autoScale: true,
       })
-      bbUpperRef.current = chart.addSeries(LineSeries, { 
-        color: "rgba(100,120,200,0.4)", lineWidth: 1, lineStyle: LineStyle.Dashed 
+    } else {
+      futureLineRef.current = chart.addSeries(LineSeries, {
+        priceScaleId: "future",           // ← mesma separação para line/area
+        color: "rgba(0,230,118,0.7)", lineWidth: 2, lineStyle: LineStyle.Dashed,
+        priceLineVisible: false, lastValueVisible: false,
+        crosshairMarkerVisible: true, crosshairMarkerRadius: 5,
+        crosshairMarkerBorderColor: "#00e676", crosshairMarkerBackgroundColor: "#060b14",
       })
-      bbLowerRef.current = chart.addSeries(LineSeries, { 
-        color: "rgba(100,120,200,0.4)", lineWidth: 1, lineStyle: LineStyle.Dashed 
-      })
-      bbMidRef.current = chart.addSeries(LineSeries, { 
-        color: "rgba(100,120,200,0.2)", lineWidth: 1, lineStyle: LineStyle.Dotted 
-      })
+      chart.priceScale("future").applyOptions({ visible: false, autoScale: true })
     }
 
     chartRef.current = chart
+
+    chart.subscribeCrosshairMove((param) => {
+      if (!param.point) {
+        setFutureTooltip(prev => prev.visible ? { ...prev, visible: false } : prev)
+        setHoverOHLC(null)
+        return
+      }
+
+      if (param.time) {
+        const t = typeof param.time === "number" ? Math.floor(param.time) : null
+        if (t !== null) {
+          const fd = futureCandleTimesRef.current.get(t)
+          if (fd) {
+            setFutureTooltip({
+              visible: true, x: param.point.x, y: param.point.y,
+              label: fd.label, price: fd.price, change: fd.change, time: formatBRTime(t),
+            })
+            setHoverOHLC(null)
+            return
+          }
+
+          const seriesData = candleSeriesRef.current
+            ? (param.seriesData?.get(candleSeriesRef.current as any) as any)
+            : null
+
+          if (seriesData && seriesData.open !== undefined) {
+            setHoverOHLC({
+              time:  safeTime(seriesData.time ?? t),
+              open:  seriesData.open,
+              high:  seriesData.high,
+              low:   seriesData.low,
+              close: seriesData.close,
+            })
+          } else {
+            const bucket = t - (t % tfRef.current)
+            const candleData = candlesRef.current.find(c =>
+              c.time === t || c.time === bucket ||
+              Math.floor(c.time / tfRef.current) === Math.floor(t / tfRef.current)
+            )
+            setHoverOHLC(candleData ?? null)
+          }
+        } else {
+          setHoverOHLC(null)
+        }
+      } else {
+        setHoverOHLC(null)
+      }
+
+      setFutureTooltip(prev => prev.visible ? { ...prev, visible: false } : prev)
+    })
 
     const ro = new ResizeObserver(() => {
       if (containerRef.current) {
@@ -412,188 +479,197 @@ export function TradingChart({
 
     return () => {
       ro.disconnect()
-      if (animationIntervalRef.current) clearInterval(animationIntervalRef.current)
+      if (animIntervalRef.current) clearInterval(animIntervalRef.current)
       chart.remove()
-      chartRef.current = null
+      chartRef.current = candleSeriesRef.current = null
+      ema9Ref.current = ema21Ref.current = null
+      bbUpperRef.current = bbLowerRef.current = bbMidRef.current = null
+      futureCandlesRef.current = futureLineRef.current = null
     }
   }, [timeframe, chartType, showIndicators])
 
-  useEffect(() => {
-  if (!chartRef.current || predictions.length === 0) return
-  
-  // Remove série anterior se existir
-  if (futureCandlesRef.current) {
-    try { chartRef.current.removeSeries(futureCandlesRef.current) } catch(e) {}
-    futureCandlesRef.current = null
-  }
-  
-  const now = Date.now()
-  
-  // ⭐ Para CANDLESTICK: mostra velas futuras
-  if (chartType === "candlestick") {
-    const velasFuturas = gerarVelasFuturas(currentPrice, now, timeframe, predictions)
-    if (velasFuturas.length === 0) return
-    
-    futureCandlesRef.current = chartRef.current.addSeries(CandlestickSeries, {
-      upColor: "rgba(0, 230, 118, 0.3)",
-      downColor: "rgba(255, 61, 87, 0.3)",
-      borderUpColor: "rgba(0, 230, 118, 0.6)",
-      borderDownColor: "rgba(255, 61, 87, 0.6)",
-      wickUpColor: "rgba(0, 168, 84, 0.3)",
-      wickDownColor: "rgba(204, 45, 68, 0.3)",
-    })
-    
-    const dataToSet = velasFuturas.map(c => ({
-      time: safeTime(c.time),
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-    }))
-    
-    futureCandlesRef.current.setData(dataToSet)
-    
-    // ⭐ Ajusta a escala do gráfico para mostrar as velas futuras
-    setTimeout(() => {
-      //chartRef.current?.timeScale().fitContent()
-    }, 100)
-  }
-  
-}, [currentPrice, timeframe, predictions, chartType])
-
-  
-
-  useEffect(() => {
+  // ── Dados históricos ───────────────────────────────────────────────────
+useEffect(() => {
     if (!candleSeriesRef.current || candles.length === 0) return
+    const now    = Math.floor(Date.now() / 1000)
+    const bucket = now - (now % timeframe)
+    const grouped = new Map<number, Candle>()
 
-    const now = Math.floor(Date.now() / 1000)
-    const bucketTime = now - (now % timeframe)
-    
-    const groupedCandles = new Map<number, Candle>()
-    
     for (const c of candles) {
-      const bucket = c.time - (c.time % timeframe)
-      if (bucket >= bucketTime) continue
-      
-      if (!groupedCandles.has(bucket)) {
-        groupedCandles.set(bucket, {
-          time: bucket,
-          open: c.open,
-          high: c.high,
-          low: c.low,
-          close: c.close,
-        })
+      const b = c.time - (c.time % timeframe)
+      if (b >= bucket) continue
+      if (!grouped.has(b)) {
+        grouped.set(b, { time: b, open: c.open, high: c.high, low: c.low, close: c.close })
       } else {
-        const existing = groupedCandles.get(bucket)!
-        existing.high = Math.max(existing.high, c.high)
-        existing.low = Math.min(existing.low, c.low)
-        existing.close = c.close
+        const ex = grouped.get(b)!
+        ex.high  = Math.max(ex.high, c.high)
+        ex.low   = Math.min(ex.low,  c.low)
+        ex.close = c.close
       }
     }
-    
-    const closedCandles = Array.from(groupedCandles.values()).sort((a, b) => a.time - b.time)
 
-    if (closedCandles.length > 0) {
-      if (chartType === "candlestick") {
-        candleSeriesRef.current.setData(
-          closedCandles.map(c => ({
-            time: safeTime(c.time),
-            open: c.open,
-            high: Math.max(c.open, c.high, c.close),
-            low: Math.min(c.open, c.low, c.close),
-            close: c.close,
-          }))
-        )
-      } else {
-        candleSeriesRef.current.setData(
-          closedCandles.map(c => ({
-            time: safeTime(c.time),
-            value: c.close,
-          }))
-        )
-      }
-      
-      setRsi(calcRSI(closedCandles))
-      
-      if (closedCandles.length >= 2) {
-        const prev = closedCandles[closedCandles.length - 2]
-        const last = closedCandles[closedCandles.length - 1]
-        setPriceChange(parseFloat((((last.close - prev.close) / prev.close) * 100).toFixed(3)))
-      }
+    const closed = Array.from(grouped.values()).sort((a, b) => a.time - b.time)
+    if (!closed.length) return
 
-      if (showIndicators && ema9Ref.current && closedCandles.length >= 9) {
-        ema9Ref.current.setData(calcEMA(closedCandles, 9) as any)
-      }
-      if (showIndicators && ema21Ref.current && closedCandles.length >= 21) {
-        ema21Ref.current.setData(calcEMA(closedCandles, 21) as any)
-      }
-      if (showIndicators && closedCandles.length >= 20) {
-        const bb = calcBollinger(closedCandles)
-        bbUpperRef.current?.setData(bb.upper as any)
-        bbLowerRef.current?.setData(bb.lower as any)
-        bbMidRef.current?.setData(bb.mid as any)
+    if (chartType === "candlestick") {
+      candleSeriesRef.current.setData(closed.map(c => ({
+        time:  safeTime(c.time),
+        open:  c.open,
+        high:  Math.max(c.high, c.open, c.close),
+        low:   Math.min(c.low,  c.open, c.close),
+        close: c.close,
+      })))
+    } else {
+      candleSeriesRef.current.setData(closed.map(c => ({ time: safeTime(c.time), value: c.close })))
+    }
+
+    setRsi(calcRSI(closed))
+    if (closed.length >= 2) {
+      const [prev, last] = [closed[closed.length - 2], closed[closed.length - 1]]
+      setPriceChange(parseFloat((((last.close - prev.close) / prev.close) * 100).toFixed(3)))
+    }
+    if (showIndicators) {
+      if (ema9Ref.current  && closed.length >= 9)  ema9Ref.current.setData(calcEMA(closed, 9) as any)
+      if (ema21Ref.current && closed.length >= 21) ema21Ref.current.setData(calcEMA(closed, 21) as any)
+      if (closed.length >= 20) {
+        const bb = calcBollinger(closed)
+        bbUpperRef.current?.setData(bb.upper)
+        bbLowerRef.current?.setData(bb.lower)
+        bbMidRef.current?.setData(bb.mid)
       }
     }
-    
-    const currentCandle = candles.find(c => {
-      const bucket = c.time - (c.time % timeframe)
-      return bucket === bucketTime
-    })
-    
-    if (currentCandle) {
-      setCurrentCandleTime(bucketTime)
-      currentAnimatedPriceRef.current = currentCandle.close
-    }
+    const cur = candles.find(c => c.time - (c.time % timeframe) === bucket)
+    if (cur) animPriceRef.current = cur.close
   }, [candles, timeframe, chartType, showIndicators])
 
+  useEffect(() => { animPriceRef.current = currentPrice }, [timeframe, currentPrice])
+
+// ── Dados das séries futuras ───────────────────────────────────────────
+
+
+
+// ── Dados das séries futuras (VERSÃO ÚNICA E CORRIGIDA) ────────────────
+  // ── Dados das séries futuras (VERSÃO ÚNICA E CORRIGIDA) ────────────────
+  useEffect(() => {
+    if (!chartRef.current || predictions.length === 0) return;
+
+    const price = targetPriceRef.current;
+    const nowS = Math.floor(Date.now() / 1000);
+    const bucketBase = nowS - (nowS % timeframe);
+    const labels = ["5s", "15s", "30s", "60s", "5m", "15m", "30m", "1h", "5h", "1d"];
+
+    futureCandleTimesRef.current.clear();
+
+    if (chartType === "candlestick" && futureCandlesRef.current) {
+      const velas = gerarVelasFuturas(price, bucketBase, predictions, atr);
+      if (!velas.length) return;
+
+      velas.forEach((c, i) =>
+        futureCandleTimesRef.current.set(safeTime(c.time), {
+          label: `Previsão ${labels[i] ?? `${predictions[i]?.time}s`}`,
+          price: c.close,
+          change: ((c.close - price) / price) * 100,
+        })
+      );
+
+      const dataPoints = velas.map(c => ({
+        time: safeTime(c.time),
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+      }));
+
+      if (isFirstFutureDataRef.current) {
+        futureCandlesRef.current.setData(dataPoints);
+        isFirstFutureDataRef.current = false;
+      } else {
+        futureCandlesRef.current.setData([]);
+        futureCandlesRef.current.setData(dataPoints);
+      }
+
+    } else if (chartType !== "candlestick" && futureLineRef.current) {
+      const pts = gerarLinhaFutura(price, bucketBase, predictions);
+      const isPos = predictions.some(p => p.value > 0);
+      futureLineRef.current.applyOptions({
+        color: isPos ? "rgba(0,230,118,0.7)" : "rgba(255,61,87,0.7)",
+        crosshairMarkerBorderColor: isPos ? "#00e676" : "#ff3d57",
+      });
+
+      if (isFirstFutureDataRef.current) {
+        futureLineRef.current.setData(pts);
+        isFirstFutureDataRef.current = false;
+      } else {
+        futureLineRef.current.setData([]);
+        futureLineRef.current.setData(pts);
+      }
+
+      predictions.forEach((pred, i) => {
+        futureCandleTimesRef.current.set(safeTime(bucketBase + pred.time), {
+          label: `Previsão ${labels[i] ?? `${pred.time}s`}`,
+          price: price * (1 + pred.value / 100),
+          change: pred.value,
+        });
+      });
+    }
+  }, [predictions, atr, timeframe, chartType]);
+// Reset a flag quando o chart for recriado
+useEffect(() => {
+  isFirstFutureDataRef.current = true;
+}, [chartType]);
+
+
+
+  // ── Render ─────────────────────────────────────────────────────────────
   const displayCandle = hoverOHLC ?? (candles.length ? candles[candles.length - 1] : null)
-  const isGreen = displayCandle ? displayCandle.close >= displayCandle.open : true
+  const isGreen  = displayCandle ? displayCandle.close >= displayCandle.open : true
   const rsiColor = rsi > 70 ? "#ff3d57" : rsi < 30 ? "#00e676" : "#f59e0b"
 
-  
-
-  const positiveCount = predictions.filter(p => p.value > 0).length
-  const negativeCount = predictions.filter(p => p.value < 0).length
-
   return (
-    <div className="relative w-full rounded-xl overflow-hidden select-none" style={{ background: "#060b14", fontFamily: "'JetBrains Mono', monospace" }}>
+    <div ref={containerOuterRef} className="relative w-full rounded-xl overflow-hidden select-none"
+      style={{ background: "#060b14", fontFamily: "'JetBrains Mono', monospace" }}>
+
       {/* Top Bar */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b" style={{ borderColor: "#0d1a28" }}>
-        <div className="flex items-center gap-4">
-          <div>
-            <span className="text-xs font-bold tracking-widest" style={{ color: "#8b9ab0" }}>{symbol}</span>
-            {lastPrice !== null && (
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-lg font-bold tabular-nums" style={{ color: isGreen ? "#00e676" : "#ff3d57" }}>
-                  {lastPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-                <span className={`text-xs font-semibold px-1.5 py-0.5 rounded`}
-                  style={{
-                    background: priceChange >= 0 ? "rgba(0,230,118,0.12)" : "rgba(255,61,87,0.12)",
-                    color: priceChange >= 0 ? "#00e676" : "#ff3d57"
-                  }}>
-                  {priceChange >= 0 ? "+" : ""}{priceChange}%
-                </span>
-              </div>
-            )}
-          </div>
+        <div>
+          <span className="text-xs font-bold tracking-widest" style={{ color: "#8b9ab0" }}>{symbol}</span>
+          {lastPrice !== null && (
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-lg font-bold tabular-nums" style={{ color: isGreen ? "#00e676" : "#ff3d57" }}>
+                {lastPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+              <span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{
+                background: priceChange >= 0 ? "rgba(0,230,118,0.12)" : "rgba(255,61,87,0.12)",
+                color:      priceChange >= 0 ? "#00e676" : "#ff3d57",
+              }}>
+                {priceChange >= 0 ? "+" : ""}{priceChange}%
+              </span>
+            </div>
+          )}
         </div>
 
         {displayCandle && (
-          <div className="flex gap-4 text-xs tabular-nums" style={{ color: "#4a6a8a" }}>
-            {[
-              ["O", displayCandle.open],
-              ["H", displayCandle.high],
-              ["L", displayCandle.low],
-              ["C", displayCandle.close],
-            ].map(([label, val]) => (
-              <span key={label}>
-                <span style={{ color: "#2a4a6a" }}>{label} </span>
-                <span style={{ color: label === "H" ? "#00e676" : label === "L" ? "#ff3d57" : "#8b9ab0" }}>
-                  {(val as number).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </span>
-            ))}
+          <div className="flex flex-col gap-0.5 text-xs tabular-nums text-right" style={{ color: "#4a6a8a" }}>
+            <div className="flex gap-4">
+              {(["O","H","L","C"] as const).map((lbl, i) => {
+                const v = [displayCandle.open, displayCandle.high, displayCandle.low, displayCandle.close][i]
+                return (
+                  <span key={lbl}>
+                    <span style={{ color: "#2a4a6a" }}>{lbl} </span>
+                    <span style={{ color: lbl === "H" ? "#00e676" : lbl === "L" ? "#ff3d57" : "#8b9ab0" }}>
+                      {v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </span>
+                )
+              })}
+            </div>
+            <div className="text-[9px]" style={{ color: "#2a4a6a" }}>
+              🕐 {formatBRTime(
+                displayCandle.time > 1e10
+                  ? Math.floor(displayCandle.time / 1000)
+                  : displayCandle.time
+              )} (Brasília)
+            </div>
           </div>
         )}
 
@@ -609,16 +685,16 @@ export function TradingChart({
         </div>
       </div>
 
-      {/* Indicator Legend */}
+      {/* Legend */}
       <div className="flex gap-4 px-4 py-1.5" style={{ background: "rgba(0,0,0,0.3)" }}>
         {[
-          { label: "EMA 9", color: "#f59e0b" },
-          { label: "EMA 21", color: "#38bdf8" },
+          { label: "EMA 9",    color: "#f59e0b" },
+          { label: "EMA 21",   color: "#38bdf8" },
           { label: "BB(20,2)", color: "rgba(100,120,200,0.6)" },
-          { label: "Signal", color: "#d946ef" },
+          { label: "Signal",   color: "#d946ef" },
         ].map(({ label, color }) => (
           <div key={label} className="flex items-center gap-1.5">
-            <div className="w-5 h-px" style={{ background: color, borderTop: `1px solid ${color}` }} />
+            <div className="w-5 h-px" style={{ background: color }} />
             <span className="text-[10px]" style={{ color: "#3a5a7a" }}>{label}</span>
           </div>
         ))}
@@ -633,30 +709,57 @@ export function TradingChart({
       </div>
 
       {/* Chart */}
-      <div ref={containerRef} className="w-full" style={{ height: 500 }} />
+      <div className="relative">
+        <div ref={containerRef} className="w-full" style={{ height: 500 }} />
 
-      {/* RSI Meter Bar */}
+        {futureTooltip.visible && (
+          <div className="pointer-events-none absolute z-50 rounded-lg px-3 py-2 text-xs"
+            style={{
+              left: futureTooltip.x + 12, top: futureTooltip.y - 10,
+              background: "rgba(6,11,20,0.95)",
+              border: `1px solid ${futureTooltip.change >= 0 ? "rgba(0,230,118,0.5)" : "rgba(255,61,87,0.5)"}`,
+              boxShadow: `0 4px 20px ${futureTooltip.change >= 0 ? "rgba(0,230,118,0.15)" : "rgba(255,61,87,0.15)"}`,
+              fontFamily: "'JetBrains Mono', monospace", minWidth: 160,
+            }}>
+            <div className="font-bold mb-1" style={{ color: futureTooltip.change >= 0 ? "#00e676" : "#ff3d57" }}>
+              🔮 {futureTooltip.label}
+            </div>
+            <div>
+              <span style={{ color: "#4a6a8a" }}>Preço: </span>
+              <span className="font-semibold" style={{ color: "#c8d8e8" }}>
+                {futureTooltip.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div>
+              <span style={{ color: "#4a6a8a" }}>Variação: </span>
+              <span className="font-semibold" style={{ color: futureTooltip.change >= 0 ? "#00e676" : "#ff3d57" }}>
+                {futureTooltip.change >= 0 ? "+" : ""}{futureTooltip.change.toFixed(4)}%
+              </span>
+            </div>
+            <div style={{ color: "#3a5a7a", fontSize: 9, marginTop: 4 }}>
+              🕐 {futureTooltip.time} (Brasília)
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* RSI Bar */}
       <div className="px-4 py-2 flex items-center gap-3" style={{ background: "#060b14", borderTop: "1px solid #0d1a28" }}>
         <span className="text-[10px] w-6" style={{ color: "#2a4a6a" }}>RSI</span>
         <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "#0d1a28" }}>
-          <div
-            className="h-full rounded-full transition-all duration-500"
-            style={{
-              width: `${rsi}%`,
-              background: `linear-gradient(90deg, #00e676 0%, #f59e0b 50%, #ff3d57 100%)`,
-            }}
-          />
+          <div className="h-full rounded-full transition-all duration-500"
+            style={{ width: `${rsi}%`, background: "linear-gradient(90deg, #00e676 0%, #f59e0b 50%, #ff3d57 100%)" }} />
         </div>
         <div className="flex gap-4 text-[9px]" style={{ color: "#1a3a5a" }}>
-          <span style={{ color: "#00a854" }}>OS 30</span>
-          <span>50</span>
-          <span style={{ color: "#cc2d44" }}>OB 70</span>
+          <span style={{ color: "#00a854" }}>OS 30</span><span>50</span><span style={{ color: "#cc2d44" }}>OB 70</span>
         </div>
       </div>
 
       {/* Watermark */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none select-none text-center" style={{ opacity: 0.02 }}>
-        <div className="text-7xl font-black tracking-widest whitespace-nowrap" style={{ color: "#fff" }}>{symbol.replace("USDT", "")}</div>
+        <div className="text-7xl font-black tracking-widest whitespace-nowrap" style={{ color: "#fff" }}>
+          {symbol.replace("USDT", "")}
+        </div>
       </div>
     </div>
   )

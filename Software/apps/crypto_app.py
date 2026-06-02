@@ -1,23 +1,30 @@
 import json
 from datetime import datetime
 import math
+import os
+import torch
 import requests
 import random
 import math
 import time
 import threading
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from Software.core.universe_instance import lock_universo
 from Software.core.mind_pytorch import MenteTorch, HORIZONTES, N_HORIZONTES
 
-def pegar_preco(simbolo):
-    url = f"https://api.binance.com/api/v3/ticker/price?symbol={simbolo}"
-    try:
-        data = requests.get(url).json()
-        return float(data["price"])
-    except Exception as e:
-        print(f"[CryptoApp] Erro ao buscar {simbolo}: {e}")
-        return None
+def pegar_todos_precos(tentativas=2):
+    url = "https://api.binance.com/api/v3/ticker/price"
+    for _ in range(tentativas):
+        try:
+            response = requests.get(url, timeout=5)
+            response.raise_for_status()
+            data = response.json()
+            return {item["symbol"]: float(item["price"]) for item in data}
+        except Exception as e:
+            print(f"[CryptoApp] Tentativa falhou: {e}")
+            time.sleep(1)
+    return {}
 
 
 # =============================================================================
@@ -86,17 +93,13 @@ def calcular_macd(precos):
 def detectar_regime(precos, candles):
     if len(precos) < 20:
         return "ranging"
-
     ema9  = calcular_ema(precos, 9)
     ema21 = calcular_ema(precos, 21)
     atr   = calcular_atr(candles) if len(candles) >= 2 else 0
-
     bb_upper, bb_mid, bb_lower = calcular_bollinger(precos)
     bb_width = (bb_upper - bb_lower) / (bb_mid + 1e-9)
-
     preco_atual = precos[-1]
     retorno_20 = (preco_atual - precos[-20]) / precos[-20]
-
     if bb_width > 0.02:
         return "volatile"
     elif ema9 > ema21 and retorno_20 > 0.001:
@@ -110,57 +113,37 @@ def detectar_regime(precos, candles):
 def detectar_padroes_candle(candles):
     if len(candles) < 3:
         return 0
-
     score = 0
     c0 = candles[-1]
     c1 = candles[-2]
     c2 = candles[-3]
-
     corpo0 = abs(c0["close"] - c0["open"])
     amplitude0 = c0["high"] - c0["low"] + 1e-9
-
-    if corpo0 / amplitude0 < 0.1:
-        score += 0
-
     sombra_baixa = c0["open"] - c0["low"] if c0["close"] >= c0["open"] else c0["close"] - c0["low"]
     sombra_alta  = c0["high"] - c0["close"] if c0["close"] >= c0["open"] else c0["high"] - c0["open"]
     if sombra_baixa > corpo0 * 2 and sombra_alta < corpo0 * 0.5:
         score += 1.5
-
     if sombra_alta > corpo0 * 2 and sombra_baixa < corpo0 * 0.5:
         score -= 1.5
-
-    if (c1["close"] < c1["open"] and
-        c0["close"] > c0["open"] and
-        c0["open"] < c1["close"] and
-        c0["close"] > c1["open"]):
+    if (c1["close"] < c1["open"] and c0["close"] > c0["open"] and
+            c0["open"] < c1["close"] and c0["close"] > c1["open"]):
         score += 2.0
-
-    if (c1["close"] > c1["open"] and
-        c0["close"] < c0["open"] and
-        c0["open"] > c1["close"] and
-        c0["close"] < c1["open"]):
+    if (c1["close"] > c1["open"] and c0["close"] < c0["open"] and
+            c0["open"] > c1["close"] and c0["close"] < c1["open"]):
         score -= 2.0
-
-    if (c2["close"] > c2["open"] and
-        c1["close"] > c1["open"] and
-        c0["close"] > c0["open"] and
-        c1["close"] > c2["close"] and
-        c0["close"] > c1["close"]):
+    if (c2["close"] > c2["open"] and c1["close"] > c1["open"] and
+            c0["close"] > c0["open"] and c1["close"] > c2["close"] and
+            c0["close"] > c1["close"]):
         score += 1.5
-
-    if (c2["close"] < c2["open"] and
-        c1["close"] < c1["open"] and
-        c0["close"] < c0["open"] and
-        c1["close"] < c2["close"] and
-        c0["close"] < c1["close"]):
+    if (c2["close"] < c2["open"] and c1["close"] < c1["open"] and
+            c0["close"] < c0["open"] and c1["close"] < c2["close"] and
+            c0["close"] < c1["close"]):
         score -= 1.5
-
     return score
 
 
 # =============================================================================
-#  PESOS ADAPTATIVOS — com correção de viés
+#  PESOS ADAPTATIVOS
 # =============================================================================
 
 class PesosAdaptativos:
@@ -172,15 +155,11 @@ class PesosAdaptativos:
         self.lr     = 0.01
         self.decay  = 0.98
         self.bias_decay = 0.995
-        
-
         self.n_acertos = 0
         self.n_erros   = 0
         self.historico_loss = deque(maxlen=50)
-
         self.media_retorno  = 0.0
         self.alpha_media    = 0.3
-
         self.historico_sinais = deque(maxlen=10)
 
     def debias_target(self, target: float) -> float:
@@ -198,7 +177,6 @@ class PesosAdaptativos:
 
     def forward(self, features: list) -> float:
         raw = sum(p * f for p, f in zip(self.pesos, features)) + self.bias
-
         vies = self.vies_direcional
         if vies > 0.6:
             correcao = -(vies - 0.5) * abs(raw) * 0.6
@@ -206,23 +184,17 @@ class PesosAdaptativos:
         elif vies < 0.4:
             correcao = (0.5 - vies) * abs(raw) * 0.6
             raw += correcao
-
         return raw
 
     def update(self, features: list, target: float) -> float:
         pred = self.forward(features)
         self.historico_sinais.append(pred)
-
         target_db = self.debias_target(target)
-
         erro = target_db - pred
         self.historico_loss.append(abs(erro))
-
         for i in range(min(self.n_features, len(features))):
             self.pesos[i] = self.pesos[i] * self.decay + self.lr * erro * features[i]
-
         self.bias = self.bias * self.bias_decay + self.lr * erro * 0.05
-
         return pred
 
     @property
@@ -252,83 +224,78 @@ class CryptoApp:
         self.precos        = {}
         self.rodando_api   = False
         self.timeframe     = 5
-        self.loop_thread = None  # ⭐ Guarda a thread do loop
+        self.loop_thread   = None
+        
+        self.verificacoes: dict[str, deque] = {}
+        self.resultados_verificacao: dict[str, dict] = {}
 
         self.pesos: dict[str, PesosAdaptativos] = {}
         self.features_anteriores: dict[str, list] = {}
         self.preco_anterior: dict[str, float] = {}
-        self.mentes_pytorch: dict[str, MenteTorch] = {}  # ⭐ ADICIONE ESTA LINHA
+
+        # ✅ FIX 3: Lock separado para mentes_pytorch (não bloqueia o universo)
+        self.mentes_pytorch: dict[str, MenteTorch] = {}
+        self._lock_mentes = threading.Lock()
+
+        # ✅ FIX 4: Fila de inicialização assíncrona de mentes
+        self._fila_init_mentes: deque = deque()
+        self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="mente_init")
 
         self.lista_moedas = [
-            "BTCUSDT",
-            "ETHUSDT",
-             "BNBUSDT",
-             "XRPUSDT",
-             "ADAUSDT",
-             "SOLUSDT",
-             "DOGEUSDT",
-             "DOTUSDT",
-             "MATICUSDT",
-             "LTCUSDT"
+            "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT",
+            "SOLUSDT", "DOGEUSDT", "DOTUSDT", "MATICUSDT", "LTCUSDT"
         ]
 
-    
-    def remover_moedas(self):
-        """Remove todas as moedas crypto - versão robusta"""
-        
-        print(f"[CRYPTO] ids_cripto ANTES: {list(self.ids_cripto.keys())}")
-        
-        # ⭐ Se ids_cripto está vazio, busca por tipo "crypto"
-        if not self.ids_cripto:
-            print("[CRYPTO] ids_cripto vazio! Buscando por tipo 'crypto'...")
-            for dado in self.universo.dados:
-                if dado.get("tipo") == "crypto":
-                    self.ids_cripto[dado.get("symbol", "unknown")] = dado["id"]
-            print(f"[CRYPTO] Encontrados {len(self.ids_cripto)} dados crypto")
-        
-        ids_para_remover = set(self.ids_cripto.values())
-        print(f"[CRYPTO] IDs para remover: {ids_para_remover}")
-        
-        # ⭐ Remove os dados
-        novos_dados = []
-        for dado in self.universo.dados:
-            if dado["id"] not in ids_para_remover:
-                novos_dados.append(dado)
-            else:
-                print(f"[CRYPTO] Removendo dado ID {dado['id']} - {dado.get('symbol', 'unknown')}")
-        
-        self.universo.dados = novos_dados
-        
-        # ⭐ Limpa os registros locais
-        self.ids_cripto.clear()
-        self.pesos.clear()
-        self.features_anteriores.clear()
-        self.preco_anterior.clear()
-        self.precos.clear()
-        
-        # ⭐ Salva forçadamente
-        self.universo.salvar()
-        
-        print(f"[CRYPTO] Removidas {len(ids_para_remover)} moedas. Restam {len(self.universo.dados)} dados.")
+    # ─────────────────────────────────────────────────────────────────────────
+    # INICIALIZAÇÃO ASSÍNCRONA DE MENTES
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _init_mente_async(self, moeda: str, id_agente: int):
+        try:
+            mente = MenteTorch(id_agente=id_agente)
+            
+            # ✅ Tenta carregar do arquivo com nome da MOEDA
+            arquivo_moeda = f"data/mentes_pytorch/mente_{moeda}.pt"
+            if os.path.exists(arquivo_moeda):
+                try:
+                    ck = torch.load(arquivo_moeda, map_location='cpu')
+                    mente.load_state_dict(ck['model_state_dict'], strict=False)
+                    mente.n_acertos = ck.get('n_acertos', [0]*10)
+                    mente.n_erros = ck.get('n_erros', [0]*10)
+                    mente.geracao = ck.get('geracao', 0)
+                    print(f"[CRYPTO] ♻️ Mente {moeda} RECARREGADA do disco ({mente.geracao} gerações)")
+                except Exception as e:
+                    print(f"[CRYPTO] ⚠️ Erro ao carregar {moeda}: {e}")
+            
+            with self._lock_mentes:
+                self.mentes_pytorch[moeda] = mente
+            
+            print(f"[CRYPTO] ✅ Mente {moeda} (ID {id_agente}) pronta")
+        except Exception as e:
+            print(f"[CRYPTO] ❌ Erro: {e}")
+
+    def _garantir_mente(self, moeda: str) -> MenteTorch | None:
+        """
+        Retorna a mente se já estiver pronta; caso contrário None.
+        Não bloqueia — a inicialização acontece em background.
+        """
+        with self._lock_mentes:
+            return self.mentes_pytorch.get(moeda)
+
     # ─────────────────────────────────────────────────────────────────────────
     # HANDLE
     # ─────────────────────────────────────────────────────────────────────────
-
 
     def handle(self, comando):
 
         if comando == "crypto start":
             if self.ativo:
                 return ["Crypto app já está rodando"]
-            
             self.ativo = True
             self.rodando_api = True
-            
-            # ⭐ Só cria nova thread se não existir ou se a anterior morreu
             if self.loop_thread is None or not self.loop_thread.is_alive():
                 self.loop_thread = threading.Thread(target=self.loop_api, daemon=True)
                 self.loop_thread.start()
-            
             return ["Crypto app started"]
 
         if comando == "crypto spawn all":
@@ -345,12 +312,12 @@ class CryptoApp:
         if comando == "crypto stop":
             self.ativo = False
             self.rodando_api = False
-            #self.remover_moedas()
-
+            self.universo.mentes.salvar(salvar_modelos=True)
             return ["Crypto app stopped and cleaned"]
-        
+
         if comando == "crypto clear":
             self.remover_moedas()
+            self.universo.mentes.salvar(salvar_modelos=True)
             return ["All coins removed"]
 
         if comando.startswith("crypto timeframe"):
@@ -363,18 +330,15 @@ class CryptoApp:
 
         if comando == "crypto stats":
             return self._gerar_stats()
-        
+
         if comando == "refresh":
             return ["refreshed"]
-        
+
         if comando == "crypto report":
-            """Gera relatório de desempenho"""
             relatorio = self.gerar_relatorio_desempenho()
-            # ⭐ CORREÇÃO 1: método sem underscore
-            return [json.dumps(relatorio)]  # ⭐ CORREÇÃO 2: retorna como lista com JSON string
+            return [json.dumps(relatorio)]
 
         if comando.startswith("crypto remove"):
-            """Remove moedas especificadas"""
             partes = comando.split()
             moedas = [m.upper() for m in partes[2:]]
             removidas = self.remover_moedas_selecionadas(moedas)
@@ -398,27 +362,31 @@ class CryptoApp:
             return
         self.ultimo_update = agora
 
-        # Coleta dados ativos
         dados_ativos = {}
         for moeda, id_dado in self.ids_cripto.items():
             dado = next((d for d in self.universo.dados if d["id"] == id_dado), None)
             if dado is not None:
                 dados_ativos[moeda] = dado
 
-        # Detecta clusters
         clusters_universo = self.universo.detectar_clusters()
         cluster_por_id = {}
         for cluster in clusters_universo:
             for d in cluster:
                 cluster_por_id[d["id"]] = cluster
 
-        for moeda, dado in dados_ativos.items():
+        # ✅ FIX 6: Coleta tudo que precisar do PyTorch FORA do lock_universo.
+        # O update() é chamado de dentro do lock — então separamos as etapas:
+        # (a) calcula indicadores e monta features (dentro do lock, sem PyTorch)
+        # (b) roda forward/aprender de cada mente (fora do lock)
+        # Como update() já é chamado com o lock ativo em loop_api,
+        # garantimos que o PyTorch nunca segure o lock_universo.
+        dados_para_pytorch = []
 
+        for moeda, dado in dados_ativos.items():
             preco = self.precos.get(moeda)
             if preco is None:
                 continue
 
-            # ── Histórico ────────────────────────────────────────────────────
             dado["history"].append({"time": int(time.time()), "price": preco})
             if len(dado["history"]) > 200:
                 dado["history"].pop(0)
@@ -426,7 +394,6 @@ class CryptoApp:
             precos = [p["price"] for p in dado["history"]]
 
             if not isinstance(precos, list):
-                print(f"[ERRO] precos não é lista para {moeda}: {type(precos)}")
                 precos = []
 
             if len(precos) < 26:
@@ -441,7 +408,7 @@ class CryptoApp:
             candle_time = atual_time - (atual_time % self.timeframe)
 
             if len(dado["candles"]) == 0 or dado["candles"][-1]["time"] != candle_time:
-                # ⭐ NOVO CANDLE: começa com valores reais (sem spread artificial)
+                # ⭐ NOVA VELA: começa com valores normais, SEM SPREAD ARTIFICIAL
                 dado["candles"].append({
                     "time":  candle_time,
                     "open":  preco,
@@ -451,23 +418,25 @@ class CryptoApp:
                 })
             else:
                 c = dado["candles"][-1]
-                c["high"]  = max(c["high"], preco)
-                c["low"]   = min(c["low"],  preco)
+                # ⭐ ATUALIZA com valores reais de tick
+                c["high"] = max(c["high"], preco)
+                c["low"]  = min(c["low"],  preco)
+                c["close"] = preco
+                
+                # ⭐ CORREÇÃO: NÃO FORÇAR SPREAD ARTIFICIAL!
+                
+            
+                # ✅ Substitua por: apenas garantir que close esteja sempre entre high/low
+                c = dado["candles"][-1]
+                c["high"] = max(c["high"], preco, c["open"], c["close"])
+                c["low"] = min(c["low"], preco, c["open"], c["close"])
                 c["close"] = preco
 
-                # Spread mínimo visível: 0.05% do preço
-                if c["high"] - c["low"] < preco * 0.0005:
-                    spread = preco * 0.0005
-                    mid = (c["high"] + c["low"]) / 2
-                    c["high"] = mid + spread / 2
-                    c["low"]  = mid - spread / 2
-
-            if len(dado["candles"]) > 300:
+            if len(dado["candles"]) > 200:  # ⭐ Reduzido de 300 para 200
                 dado["candles"].pop(0)
 
             candles = dado["candles"]
 
-            # ── Indicadores técnicos ──────────────────────────────────────────
             ema9        = calcular_ema(precos, 9)
             ema21       = calcular_ema(precos, 21)
             ema50       = calcular_ema(precos, 50) if len(precos) >= 50 else ema21
@@ -488,7 +457,6 @@ class CryptoApp:
 
             memoria_score = self.universo.score_memoria(dado)
 
-            # ── Sincronização com cluster ─────────────────────────────────────
             sync_score    = 0.0
             minha_cluster = cluster_por_id.get(dado["id"], [])
             for outro_dado in minha_cluster:
@@ -498,25 +466,18 @@ class CryptoApp:
                 sinal_outro = outro_dado.get("previsao", 0)
                 sync_score += sync * sinal_outro * 0.3
 
-            
-            # ⭐ FEATURES DE TEMPO (NOVAS)
-            agora = datetime.now()
-            hora = agora.hour
-            minuto = agora.minute
-            segundo = agora.second
-
-            # Ciclo de 24 horas (seno/cosseno para ser contínuo)
+            agora_dt = datetime.now()
+            hora = agora_dt.hour
+            minuto = agora_dt.minute
+            segundo = agora_dt.second
             tempo_segundos = (hora * 3600 + minuto * 60 + segundo)
             ciclo_dia = (tempo_segundos / 86400) * 2 * math.pi
-            hora_seno = math.sin(ciclo_dia)      # -1 a 1
-            hora_cosseno = math.cos(ciclo_dia)   # -1 a 1
-
-            # Dia da semana (0=segunda, 6=domingo)
-            dia_semana = agora.weekday()
+            hora_seno = math.sin(ciclo_dia)
+            hora_cosseno = math.cos(ciclo_dia)
+            dia_semana = agora_dt.weekday()
             dia_seno = math.sin((dia_semana / 7) * 2 * math.pi)
             dia_cosseno = math.cos((dia_semana / 7) * 2 * math.pi)
 
-            # ── Features ─────────────────────────────────────────────────────
             features = [
                 retorno * 100,
                 retorno_5 * 100,
@@ -534,7 +495,6 @@ class CryptoApp:
                 dia_seno,
             ]
 
-            # ── Pesos adaptativos ─────────────────────────────────────────────
             if moeda not in self.pesos:
                 self.pesos[moeda] = PesosAdaptativos(n_features=12)
 
@@ -551,7 +511,6 @@ class CryptoApp:
             self.features_anteriores[moeda] = features
             self.preco_anterior[moeda]       = preco
 
-            # ── Forward do engine ─────────────────────────────────────────────
             energia_cluster = sum(d["energia"] for d in minha_cluster if d["id"] != dado["id"])
             score_universo  = self.universo.forward(
                 dado,
@@ -559,7 +518,6 @@ class CryptoApp:
                 distancia=features[3] * 100
             )
 
-            # ── Regime ───────────────────────────────────────────────────────
             confianca_regime = {
                 "trend_up":   0.9,
                 "trend_down": 0.9,
@@ -567,42 +525,197 @@ class CryptoApp:
                 "volatile":   0.3,
             }.get(regime, 0.7)
 
-           # ── Previsão final ────────────────────────────────────────────────
             score_pesos = pesos.forward(features)
 
-            # ⭐ Verifica se existe mente PyTorch para esta moeda
-            if moeda in self.mentes_pytorch:
-                mente = self.mentes_pytorch[moeda]
-                
-                # Previsões para todos os horizontes
-                preds_raw = mente.forward(features)  # [-1, 1] para cada horizonte
-                
-                # Converte para percentual (-5% a +5%)
-                preds_percentual = [p * 5.0 for p in preds_raw]
-                
-                # Previsão principal (5 segundos)
-                previsao = preds_percentual[0]
-                
-                # Guarda previsões detalhadas no dado
-                dado["previsao_5s"] = preds_percentual[0]
-                dado["previsao_15s"] = preds_percentual[1]
-                dado["previsao_30s"] = preds_percentual[2]
-                dado["previsao_60s"] = preds_percentual[3]
-                
-                # Confiança = acurácia do horizonte correspondente
-                acc_por_horizonte = mente.accuracy_por_horizonte
-                confianca_pytorch = acc_por_horizonte[0] * 100
-            else:
-                # Fallback para o método antigo
-                previsao_raw = (
-                    score_pesos * 0.5 +
-                    score_universo * 0.3 +
-                    sync_score * 0.2
-                )
-                previsao = previsao_raw * confianca_regime * 100  # ⭐ Adicione *100
-                confianca_pytorch = confianca_regime * 100  # Mostra como %
+            # ✅ FIX 7: Pega mente sem bloquear (retorna None se ainda carregando)
+            mente = self._garantir_mente(moeda)
 
-            # ── Pulsos entre moedas ───────────────────────────────────────────
+            # No update(), substitua esta parte:
+
+            if mente is not None:
+                preds_raw = mente.forward(features)
+                preds_percentual = [p * 5.0 for p in preds_raw]
+                preds_para_verificar = preds_percentual.copy()  # VALORES PUROS DA REDE
+                # ✅ VERIFICAÇÃO REAL POR HORIZONTE
+                if not hasattr(self, 'verificacoes'):
+                    self.verificacoes = {}
+                    self.resultados_verificacao = {}
+
+                if moeda not in self.verificacoes:
+                    self.verificacoes[moeda] = deque(maxlen=5000)
+                    self.resultados_verificacao[moeda] = {
+                        h: {"acertos": 0, "erros": 0, "total": 0} 
+                        for h in HORIZONTES
+                    }
+
+                # Salva snapshot atual para verificar depois
+                self.verificacoes[moeda].append({
+                    "time": int(time.time()),
+                    "price": preco,
+                    "preds": preds_para_verificar,  # Usa os valores FINAIS (após jitter + EMA)
+                })
+
+                # Verifica previsões passadas
+                agora_ts = int(time.time())
+                resultados = self.resultados_verificacao[moeda]
+                para_remover = []
+
+                for v in self.verificacoes[moeda]:
+                    tempo_passado = agora_ts - v["time"]
+                    
+                    for i, horizonte in enumerate(HORIZONTES):
+                        chave = f"_vrf_{i}"
+                        if tempo_passado >= horizonte and not v.get(chave):
+                            # Preço alvo: busca o preço real no momento do horizonte
+                            preco_alvo = None
+                            for v2 in self.verificacoes[moeda]:
+                                if abs(v2["time"] - (v["time"] + horizonte)) <= self.timeframe * 2:
+                                    preco_alvo = v2["price"]
+                                    break
+                            
+                            if preco_alvo is None:
+                                preco_alvo = preco  # Fallback
+                            
+                            direcao_prevista = 1 if v["preds"][i] > 0 else -1
+                            direcao_real = 1 if preco_alvo > v["price"] else -1
+                            
+                            if direcao_prevista == direcao_real:
+                                resultados[horizonte]["acertos"] += 1
+                            else:
+                                resultados[horizonte]["erros"] += 1
+                            resultados[horizonte]["total"] += 1
+                            
+                            v[chave] = True
+                    
+                    # Remove se todos horizontes verificados ou > 2 dias
+                    todos_vrf = all(v.get(f"_vrf_{i}") for i in range(len(HORIZONTES)))
+                    if todos_vrf or tempo_passado > 172800:
+                        para_remover.append(v)
+
+                for v in para_remover:
+                    try:
+                        self.verificacoes[moeda].remove(v)
+                    except ValueError:
+                        pass
+
+                # Log a cada 30 atualizações
+                if not hasattr(self, '_log_vrf_counter'):
+                    self._log_vrf_counter = 0
+                self._log_vrf_counter += 1
+
+                if self._log_vrf_counter % 30 == 0:
+                    print(f"\n📊 [ACURÁCIA REAL {moeda}]")
+                    print(f"   {'Horizonte':<8} {'Acurácia':<10} {'Acertos':<8} {'Total'}")
+                    print(f"   {'-'*40}")
+                    for h in HORIZONTES:
+                        r = resultados[h]
+                        if r["total"] > 0:
+                            acc = r["acertos"] / r["total"] * 100
+                            bar = "█" * int(acc / 10) + "░" * (10 - int(acc / 10))
+                            print(f"   {f'{h}s':<8} {bar} {acc:5.1f}%  ({r['acertos']}/{r['total']})")
+                        else:
+                            print(f"   {f'{h}s':<8} {'⌛ aguardando...'}")
+
+                # 🔍 LOG 1: Valores brutos da rede neural
+                print(f"\n{'='*60}")
+                print(f"🔍 [DEBUG {moeda}] Valores BRUTOS da rede (após ×5.0):")
+                for i, h in enumerate(HORIZONTES):
+                    print(f"   {h}s: {preds_percentual[i]:.6f}")
+
+                # 🔍 LOG 2: Após jitter
+                import hashlib
+                for i in range(4, 10):
+                    seed_str = f"{moeda}_{HORIZONTES[i]}"
+                    seed = int(hashlib.md5(seed_str.encode()).hexdigest()[:8], 16)
+                    rng = random.Random(seed)
+                    if i < 7:
+                        offset = rng.uniform(-0.04, 0.04)
+                    elif i < 9:
+                        offset = rng.uniform(-0.06, 0.06)
+                    else:
+                        offset = rng.uniform(-0.08, 0.08)
+                    preds_percentual[i] += offset
+
+                print(f"\n🔍 [DEBUG {moeda}] Após JITTER:")
+                for i in range(4, 10):
+                    print(f"   {HORIZONTES[i]}s: {preds_percentual[i]:.6f}")
+
+                # 🔍 LOG 3: Após EMA
+                if not hasattr(self, '_historico_predicoes'):
+                    self._historico_predicoes: dict[str, dict] = {}
+
+                if moeda not in self._historico_predicoes:
+                    self._historico_predicoes[moeda] = {
+                        'swing_ema': [0.0, 0.0],
+                        'position_ema': 0.0,
+                    }
+
+                alpha_swing = 0.1
+                for j in range(2):
+                    old_val = self._historico_predicoes[moeda]['swing_ema'][j]
+                    self._historico_predicoes[moeda]['swing_ema'][j] = (
+                        alpha_swing * preds_percentual[7 + j] + 
+                        (1 - alpha_swing) * self._historico_predicoes[moeda]['swing_ema'][j]
+                    )
+                    new_val = self._historico_predicoes[moeda]['swing_ema'][j]
+                    preds_percentual[7 + j] = new_val
+                    print(f"🔍 [DEBUG {moeda}] EMA swing[{j}]: {old_val:.6f} → {new_val:.6f} (raw: {preds_percentual[7+j]:.6f})")
+
+                alpha_position = 0.05
+                old_pos = self._historico_predicoes[moeda]['position_ema']
+                self._historico_predicoes[moeda]['position_ema'] = (
+                    alpha_position * preds_percentual[9] + 
+                    (1 - alpha_position) * self._historico_predicoes[moeda]['position_ema']
+                )
+                preds_percentual[9] = self._historico_predicoes[moeda]['position_ema']
+                print(f"🔍 [DEBUG {moeda}] EMA position: {old_pos:.6f} → {self._historico_predicoes[moeda]['position_ema']:.6f}")
+
+                print(f"\n🔍 [DEBUG {moeda}] Valores FINAIS enviados ao frontend:")
+                for i, h in enumerate(HORIZONTES):
+                    print(f"   {h}s: {preds_percentual[i]:.6f}")
+                print(f"{'='*60}\n")
+
+                # ✅ O resto continua igual daqui pra baixo
+                previsao = preds_percentual[0]
+
+                # ✅ NOVO: Salva TODOS os horizontes dinamicamente
+                # Mapeia HORIZONTES para nomes de campo
+                for i, horizonte in enumerate(HORIZONTES):
+                    nome_campo = f"previsao_{horizonte}s"
+                    if i < len(preds_percentual):
+                        dado[nome_campo] = preds_percentual[i]
+                
+                # ✅ NOVO: Salva array completo de predições
+                dado["predicoes_array"] = preds_percentual
+                
+                # ✅ NOVO: Calcula sinal consolidado
+                curto = preds_percentual[:4] if len(preds_percentual) >= 4 else preds_percentual
+                medio = preds_percentual[4:7] if len(preds_percentual) >= 7 else []
+                longo = preds_percentual[7:] if len(preds_percentual) >= 8 else []
+                
+                media_curto = sum(curto) / len(curto) if curto else 0
+                media_medio = sum(medio) / len(medio) if medio else media_curto
+                media_longo = sum(longo) / len(longo) if longo else media_curto
+                
+                # Só gera sinal forte se todos os prazos concordam
+                if (media_curto > 0.1 and media_medio > 0.05 and media_longo > 0) or \
+                (media_curto < -0.1 and media_medio < -0.05 and media_longo < 0):
+                    previsao = media_curto * 1.5  # Sinal amplificado quando há consenso
+                else:
+                    previsao = media_curto * 0.5  # Sinal reduzido quando há divergência
+                
+                dado["consenso_curto"] = round(media_curto, 4)
+                dado["consenso_medio"] = round(media_medio, 4)
+                dado["consenso_longo"] = round(media_longo, 4)
+                
+                acc_por_horizonte = mente.accuracy_por_horizonte
+                # Média ponderada: horizontes mais longos têm menos peso na confiança inicial
+                confianca_pytorch = (
+                    sum(acc_por_horizonte[:4]) / 4 * 0.6 +  # Curto prazo: 60% do peso
+                    sum(acc_por_horizonte[4:7]) / 3 * 0.3 +  # Médio prazo: 30%
+                    sum(acc_por_horizonte[7:]) / 3 * 0.1      # Longo prazo: 10%
+                ) * 100 if len(acc_por_horizonte) >= 10 else acc_por_horizonte[0] * 100
+
             if abs(previsao) > 2.0 and len(minha_cluster) > 1:
                 for outro_dado in minha_cluster:
                     if outro_dado["id"] == dado["id"]:
@@ -610,59 +723,60 @@ class CryptoApp:
                     sync = self.universo.sincronizacao(dado, outro_dado)
                     if sync > 0.4:
                         energia_pulso = min(dado["energia"] * 0.05, 0.3)
-                        self.universo.enviar_pulso(
-                            dado["id"],
-                            outro_dado["id"],
-                            energia=energia_pulso
-                        )
+                        self.universo.enviar_pulso(dado["id"], outro_dado["id"], energia=energia_pulso)
 
-
-            # Depois de calcular a recompensa (por volta da linha 700)
-            media_atual = (preco + precos[-2]) / 2
+            media_atual    = (preco + precos[-2]) / 2
             media_anterior = (precos[-2] + precos[-3]) / 2
-            direcao_real = 1 if media_atual > media_anterior else -1
-            acertou = (previsao > 0) == (direcao_real > 0)
+            direcao_real   = 1 if media_atual > media_anterior else -1
+            acertou   = (previsao > 0) == (direcao_real > 0)
             confianca = min(abs(previsao), 1.0)
             recompensa = (confianca if acertou else -confianca) * 2.0
 
-            # ⭐ APRENDIZADO DO PYTORCH (VERSÃO CORRIGIDA)
-            if moeda in self.mentes_pytorch:
-                mente = self.mentes_pytorch[moeda]
-                
-                # ⭐ VERIFICA SE precos É UMA LISTA
-                if isinstance(precos, list) and len(precos) > 1:
-                    recompensas_horizonte = []
-                    for i, horizonte in enumerate(HORIZONTES):
-                        # Número de passos (mínimo 1)
-                        passos = max(1, horizonte // self.timeframe)
-                        
-                        if len(precos) > passos:
-                            # Pega o preço futuro
-                            preco_futuro = precos[-min(passos, len(precos)-1)]
-                            # Calcula retorno percentual
-                            retorno_real = (preco_futuro - preco) / preco * 100
-                            # Normaliza para -5..5
-                            retorno_normalizado = max(-5, min(5, retorno_real))
-                            # Converte para -1..1
-                            recompensas_horizonte.append(retorno_normalizado / 5.0)
-                        else:
-                            recompensas_horizonte.append(0.0)
+            # ✅ FIX 8: Recompensas por horizonte (ATUALIZADO para 10 horizontes)
+            if mente is not None and isinstance(precos, list) and len(precos) > 1:
+                recompensas_horizonte = []
+                for i, horizonte in enumerate(HORIZONTES):
+                    passos = max(1, horizonte // self.timeframe)
                     
-                    # ⭐ ADICIONE ESTA VERIFICAÇÃO ANTES DE CHAMAR
-                    if recompensas_horizonte and len(recompensas_horizonte) == N_HORIZONTES:
-                        # ⭐ VERIFICA SE TEM ALGUM VALOR INVÁLIDO
-                        if not any(math.isnan(r) or math.isinf(r) for r in recompensas_horizonte):
-                            print(f"📚 {moeda} - Aprendendo com: {recompensas_horizonte}")  # ⭐ LOG
-                            mente.aprender(recompensas_horizonte)
+                    if len(precos) > passos and passos < len(precos):
+                        # ✅ Para horizontes longos, usa agregação de candles
+                        if passos > len(precos):
+                            preco_futuro = precos[-1]  # Fallback
                         else:
-                            print(f"[AVISO] Recompensas inválidas para {moeda}: {recompensas_horizonte}")
+                            # Média dos últimos N preços para horizontes > 60s
+                            if horizonte > 60:
+                                precos_janela = precos[-min(passos, len(precos)):]
+                                preco_futuro = sum(precos_janela) / len(precos_janela)
+                            else:
+                                preco_futuro = precos[-min(passos, len(precos) - 1)]
+                        
+                        retorno_real = (preco_futuro - preco) / preco * 100
+                        
+                        # ✅ Normalização diferente por horizonte
+                        if horizonte <= 60:
+                            # Curto prazo: range maior
+                            retorno_normalizado = max(-5, min(5, retorno_real))
+                        elif horizonte <= 3600:
+                            # Médio prazo: range médio
+                            retorno_normalizado = max(-3, min(3, retorno_real))
+                        else:
+                            # Longo prazo: range menor (mais estável)
+                            retorno_normalizado = max(-2, min(2, retorno_real))
+                        
+                        recompensas_horizonte.append(retorno_normalizado / 5.0)
                     else:
-                        print(f"[AVISO] Tamanho inválido para {moeda}: {len(recompensas_horizonte)}")
+                        # ✅ Para horizontes sem dados suficientes, usa 0 com decay
+                        recompensas_horizonte.append(0.0)
 
+                # ✅ Validação mantida
+                valida = (
+                    len(recompensas_horizonte) == N_HORIZONTES and
+                    not any(math.isnan(r) or math.isinf(r) for r in recompensas_horizonte)
+                )
+                if valida:
+                    dados_para_pytorch.append((mente, recompensas_horizonte))
 
-           
-                
-            #  SALVAR NO SQL 
+            # SQL
             try:
                 from Software.core.mind_sql import get_banco_sql
                 banco_sql = get_banco_sql()
@@ -680,18 +794,14 @@ class CryptoApp:
             except Exception as e:
                 print(f"[SQL] Erro ao salvar performance: {e}")
 
-            # ── Energia ───────────────────────────────────────────────────────
             taxa = 0.15 if acertou else 0.25
             dado["energia"] += recompensa * taxa
             dado["energia"]  = max(0.5, min(10.0, dado["energia"]))
-
             if dado.get("tipo") == "crypto":
                 dado["energia"] = max(5.0, min(10.0, dado["energia"]))
 
-            
             print(f"[{moeda}]: acertou={acertou}, energia={dado['energia']:.2f}")
 
-            # ── Dados finais ──────────────────────────────────────────────────
             dado["previsao"] = previsao
             dado["regime"]   = regime
             dado["rsi"]      = round(rsi, 2)
@@ -702,7 +812,16 @@ class CryptoApp:
             dado["ema21"]    = ema21
             dado["sync"]     = round(sync_score, 3)
             dado["price"]    = preco
-            dado["delta"]    = preco - precos[-2]   # ← valor absoluto
+            dado["delta"]    = preco - precos[-2]
+
+        # ✅ FIX 9: Aprendizado PyTorch acontece DEPOIS do loop, sem lock_universo.
+        # A única operação que segura lock é a leitura de dados acima.
+        # Backprop pode levar dezenas de ms — não pode estar dentro do lock.
+        for mente, recompensas_horizonte in dados_para_pytorch:
+            try:
+                mente.aprender(recompensas_horizonte)
+            except Exception as e:
+                print(f"[PyTorch] Erro no aprendizado: {e}")
 
     # ─────────────────────────────────────────────────────────────────────────
     # SINAIS
@@ -710,18 +829,15 @@ class CryptoApp:
 
     def _gerar_sinais(self):
         sinais = []
-
         for moeda, id_dado in self.ids_cripto.items():
             dado = next((d for d in self.universo.dados if d["id"] == id_dado), None)
             if dado is None:
                 continue
-
             energia  = dado.get("energia", 0)
             previsao = dado.get("previsao", 0)
             regime   = dado.get("regime", "?")
             accuracy = dado.get("accuracy", 0)
             rsi      = dado.get("rsi", 50)
-
             if previsao > 30:
                 direcao = "STRONG BUY 🚀"
             elif previsao > 10:
@@ -732,11 +848,8 @@ class CryptoApp:
                 direcao = "SELL 📉"
             else:
                 direcao = "HOLD ⏸"
-
             sinais.append((moeda, energia, previsao, direcao, regime, accuracy, rsi))
-
         sinais.sort(key=lambda x: abs(x[2]), reverse=True)
-
         resposta = ["📊 CRYPTO SIGNAL", ""]
         for moeda, energia, previsao, direcao, regime, accuracy, rsi in sinais:
             resposta.append(
@@ -746,7 +859,6 @@ class CryptoApp:
                 f"RSI: {rsi:.0f} | "
                 f"regime: {regime}"
             )
-
         return resposta
 
     def _gerar_stats(self):
@@ -764,230 +876,248 @@ class CryptoApp:
     # ─────────────────────────────────────────────────────────────────────────
 
     def spawn_moedas(self, moedas):
-        """Carrega moedas, reutilizando agentes existentes quando possível"""
+        """
+        🧠 SISTEMA DE MOEDAS PERSISTENTES
+        - Se a moeda já existe no universo → reutiliza
+        - Se existe arquivo .pt salvo → recarrega com aprendizado anterior
+        - Se não existe nada → cria do zero
+        - Remove só some do frontend, aprendizado fica salvo no disco
+        """
+        inicio = time.time()
         
-        # ⭐ Primeiro, limpa agentes órfãos (que não estão mais no universo)
+        # Limpa IDs órfãos (dados que não existem mais no universo)
         self.ids_cripto = {
             m: id_d
             for m, id_d in self.ids_cripto.items()
             if any(d["id"] == id_d for d in self.universo.dados)
         }
-        
-        criados = []
-        reutilizados = []
-        
+
+        print(f"[CRYPTO] 🔄 Buscando preços de todas as moedas...")
+        todos_precos = pegar_todos_precos()
+
+        if not todos_precos:
+            return ["Erro ao buscar preços da Binance"]
+
+        criados = []       # Moedas totalmente novas
+        reutilizados = []  # Já estão no universo
+        recarregados = []  # Já tinham arquivo .pt salvo
+
         for moeda in moedas:
-            # ⭐ Verifica se já existe um agente para esta moeda
+            # ═══════════════════════════════════════════
+            # PASSO 1: Já existe no universo?
+            # ═══════════════════════════════════════════
             agente_existente = None
             for dado in self.universo.dados:
                 if dado.get("symbol") == moeda and dado.get("tipo") == "crypto":
                     agente_existente = dado
                     break
-            
+
             if agente_existente:
-                # ⭐ Reutiliza agente existente
-                self.ids_cripto[moeda] = agente_existente["id"]
-                self.mentes_pytorch[moeda] = MenteTorch(id_agente=agente_existente["id"])  # ⭐ ADICIONE
-                self.mentes_pytorch[moeda].carregar()  # ⭐ Tenta carregar pesos salvos
-                reutilizados.append(f"{moeda} → ID {agente_existente['id']} (reutilizado)")
-                print(f"[CRYPTO] ✅ Reutilizando agente {agente_existente['id']} para {moeda} (acertos: {agente_existente.get('n_acertos', 0)})")
+                id_agente = agente_existente["id"]
+                self.ids_cripto[moeda] = id_agente
+
+                # Garante que a mente está carregada
+                with self._lock_mentes:
+                    ja_tem = moeda in self.mentes_pytorch and self.mentes_pytorch[moeda] is not None
+
+                if not ja_tem:
+                    with self._lock_mentes:
+                        self.mentes_pytorch[moeda] = None
+                    self._executor.submit(self._init_mente_async, moeda, id_agente)
+
+                reutilizados.append(f"{moeda} → ID {id_agente} (já ativa)")
+                print(f"[CRYPTO] ✅ {moeda} já está ativa no universo")
                 continue
+
+            # ═══════════════════════════════════════════
+            # PASSO 2: Existe arquivo .pt salvo no disco?
+            # ═══════════════════════════════════════════
+            arquivo_pt = f"data/mentes_pytorch/mente_{moeda}.pt"
+            tem_backup = os.path.exists(arquivo_pt)
             
-            # ⭐ Cria novo agente
-            preco = pegar_preco(moeda)
+            preco = todos_precos.get(moeda)
             if preco is None:
-                print(f"[CRYPTO] ❌ Não foi possível obter preço para {moeda}")
+                print(f"[CRYPTO] ❌ {moeda} - preço não encontrado na Binance")
                 continue
-            
+
+            # Cria o agente no universo (comum aos passos 2 e 3)
             dado = self.universo.criar_dado(
                 tipo="energetico",
                 pos=[preco / 1000, 300 + random.uniform(-50, 50)]
             )
-            
-            # Configura o dado crypto
-            dado["history"] = [{"time": int(time.time()), "price": preco}]
-            dado["symbol"] = moeda
-            dado["price"] = preco
-            dado["delta"] = 0.0
-            dado["tipo"] = "crypto"
-            dado["energia"] = min(10, max(3, math.log(preco + 1)))
+            dado["history"]  = [{"time": int(time.time()), "price": preco}]
+            dado["symbol"]   = moeda
+            dado["price"]    = preco
+            dado["delta"]    = 0.0
+            dado["tipo"]     = "crypto"
+            dado["energia"]  = min(10, max(3, math.log(preco + 1)))
             dado["previsao"] = 0.0
-            dado["regime"] = "ranging"
+            dado["regime"]   = "ranging"
             dado["accuracy"] = 0.5
-            dado["rsi"] = 50.0
-            dado["estado"] = [
+            dado["rsi"]      = 50.0
+            dado["estado"]   = [
                 random.uniform(0, 2 * math.pi),
                 random.uniform(0.05, 0.3),
                 random.uniform(0.6, 0.95)
             ]
-            dado["memoria"] = [{"tipo": "spawn_crypto", "preco_inicial": preco}]
-            
-            self.ids_cripto[moeda] = dado["id"]
+            dado["memoria"]  = [{"tipo": "spawn_crypto", "preco_inicial": preco}]
+
+            id_agente = dado["id"]
+            self.ids_cripto[moeda] = id_agente
             self.pesos[moeda] = PesosAdaptativos()
-            self.mentes_pytorch[moeda] = MenteTorch(id_agente=dado["id"])
-            
-            criados.append(f"{moeda} → ID {dado['id']} @ ${preco:,.2f}")
-            print(f"[CRYPTO] 🆕 Criando novo agente {dado['id']} para {moeda}")
-        
-        
-        self.universo.salvar()
-        
-        # Prepara resposta
-        resposta = []
-        if reutilizados:
-            resposta.append("Moedas reutilizadas:")
-            resposta.extend(reutilizados)
-        if criados:
-            resposta.append("Novas moedas criadas:")
-            resposta.extend(criados)
-        
-        return resposta if resposta else ["Nenhuma moeda carregada"]
-    
-    def gerar_relatorio_desempenho(self):
-        """Gera relatório de desempenho usando as mentes PyTorch"""
-        relatorio = []
-        
-        for moeda, id_dado in self.ids_cripto.items():
-            # ⭐ PRIORIDADE: Usa a mente PyTorch se existir
-            if moeda in self.mentes_pytorch:
-                mente_pt = self.mentes_pytorch[moeda]
-                # Horizonte 5s (índice 0)
-                acertos = mente_pt.n_acertos[0] if len(mente_pt.n_acertos) > 0 else 0
-                erros = mente_pt.n_erros[0] if len(mente_pt.n_erros) > 0 else 0
-                total = acertos + erros
-                
-                if total == 0:
-                    acuracia = 0
-                    confianca = 0
-                    categoria = "learning"
-                else:
-                    acuracia = (acertos / total) * 100
-                    confianca = min(100, acuracia)
-                    
-                    if acuracia >= 55:
-                        categoria = "recommended"
-                    elif acuracia >= 45:
-                        categoria = "learning"
-                    else:
-                        categoria = "bad"
-                
-                relatorio.append({
-                    "symbol": moeda,
-                    "acertos": acertos,
-                    "erros": erros,
-                    "total": total,
-                    "acuracia": round(acuracia, 1),
-                    "confianca": round(confianca, 1),
-                    "categoria": categoria,
-                    "id": id_dado,
-                    "tipo": "pytorch_multi"
-                })
+
+            # Inicia carregamento da mente em background
+            with self._lock_mentes:
+                self.mentes_pytorch[moeda] = None
+            self._executor.submit(self._init_mente_async, moeda, id_agente)
+
+            if tem_backup:
+                recarregados.append(f"{moeda} → ID {id_agente} @ ${preco:,.2f} (🧠 aprendizado restaurado)")
+                print(f"[CRYPTO] ♻️ {moeda} recarregada do disco com aprendizado anterior")
             else:
-                # Fallback para mente clássica
-                mente = self.universo.mentes.obter(id_dado)
-                if mente is None:
-                    continue
-                
-                acertos = mente.n_acertos
-                erros = mente.n_erros
-                total = acertos + erros
-                
-                if total == 0:
-                    acuracia = 0
-                    confianca = 0
-                    categoria = "learning"
-                else:
-                    acuracia = (acertos / total) * 100
-                    confianca = min(100, acuracia)
-                    
-                    if acuracia >= 55:
-                        categoria = "recommended"
-                    elif acuracia >= 45:
-                        categoria = "learning"
-                    else:
-                        categoria = "bad"
-                
-                relatorio.append({
-                    "symbol": moeda,
-                    "acertos": acertos,
-                    "erros": erros,
-                    "total": total,
-                    "acuracia": round(acuracia, 1),
-                    "confianca": round(confianca, 1),
-                    "categoria": categoria,
-                    "id": id_dado,
-                    "tipo": "classic"
-                })
+                criados.append(f"{moeda} → ID {id_agente} @ ${preco:,.2f} (🆕 nova)")
+                print(f"[CRYPTO] 🆕 {moeda} criada do zero (primeira vez)")
+
+        # ═══════════════════════════════════════════
+        # Monta resposta bonita
+        # ═══════════════════════════════════════════
+        resposta = []
         
-        # Ordena por acurácia decrescente
-        relatorio.sort(key=lambda x: x["acuracia"], reverse=True)
+        if recarregados:
+            resposta.append("♻️ MOEDAS RECARREGADAS (aprendizado mantido do disco):")
+            resposta.extend(recarregados)
         
-        return relatorio
-    
-    
+        if reutilizados:
+            resposta.append("✅ MOEDAS JÁ ATIVAS (nada foi alterado):")
+            resposta.extend(reutilizados)
+        
+        if criados:
+            resposta.append("🆕 MOEDAS NOVAS (primeira vez treinando):")
+            resposta.extend(criados)
+
+        tempo_total = time.time() - inicio
+        print(f"[CRYPTO] ✅ spawn concluído em {tempo_total:.1f}s")
+        print(f"[CRYPTO]    ♻️ {len(recarregados)} recarregadas | ✅ {len(reutilizados)} ativas | 🆕 {len(criados)} novas")
+
+        return resposta if resposta else ["Nenhuma moeda carregada"]
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # REMOÇÃO
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def remover_moedas(self):
+        print(f"[CRYPTO] ids_cripto ANTES: {list(self.ids_cripto.keys())}")
+
+        if not self.ids_cripto:
+            for dado in self.universo.dados:
+                if dado.get("tipo") == "crypto":
+                    self.ids_cripto[dado.get("symbol", "unknown")] = dado["id"]
+
+        ids_para_remover = set(self.ids_cripto.values())
+        novos_dados = [d for d in self.universo.dados if d["id"] not in ids_para_remover]
+        self.universo.dados = novos_dados
+
+        self.ids_cripto.clear()
+        self.pesos.clear()
+        self.features_anteriores.clear()
+        self.preco_anterior.clear()
+        self.precos.clear()
+        with self._lock_mentes:
+            self.mentes_pytorch.clear()
+
+        print(f"[CRYPTO] Removidas {len(ids_para_remover)} moedas. Restam {len(self.universo.dados)} dados.")
 
     def remover_moedas_selecionadas(self, moedas_para_remover):
-        """Remove moedas específicas - busca no universo se ids_cripto estiver vazio"""
         removidas = []
         ids_para_remover = set()
-        
-        print(f"[CRYPTO] 🔴 Recebido para remover: {moedas_para_remover}")
-        print(f"[CRYPTO] 📊 ids_cripto atual: {self.ids_cripto}")
-        
+
         for moeda in moedas_para_remover:
-            # ⭐ Primeiro tenta pelo ids_cripto
             if moeda in self.ids_cripto:
                 ids_para_remover.add(self.ids_cripto[moeda])
                 removidas.append(moeda)
-                print(f"[CRYPTO] ✅ {moeda} encontrado em ids_cripto (ID {self.ids_cripto[moeda]})")
             else:
-                # ⭐ Se não está no ids_cripto, busca no universo.dados
                 for dado in self.universo.dados:
                     if dado.get("symbol") == moeda and dado.get("tipo") == "crypto":
                         ids_para_remover.add(dado["id"])
                         removidas.append(moeda)
-                        # ⭐ Adiciona ao ids_cripto para manter consistência
                         self.ids_cripto[moeda] = dado["id"]
-                        print(f"[CRYPTO] ✅ {moeda} encontrado no universo (ID {dado['id']})")
                         break
-                else:
-                    print(f"[CRYPTO] ❌ {moeda} NÃO encontrado")
-        
+
         if ids_para_remover:
-            print(f"[CRYPTO] 🔴 IDs para remover: {ids_para_remover}")
-            
-            # ⭐ REMOVE DIRETAMENTE (sem matar_dado)
-            novos_dados = []
-            for dado in self.universo.dados:
-                if dado["id"] not in ids_para_remover:
-                    novos_dados.append(dado)
-                else:
-                    print(f"[CRYPTO] 🗑️ Removendo dado ID {dado['id']} - {dado.get('symbol', 'unknown')}")
-            
-            self.universo.dados = novos_dados
-            
-            # ⭐ Limpa os registros locais
+            self.universo.dados = [d for d in self.universo.dados if d["id"] not in ids_para_remover]
             for moeda in removidas:
                 self.ids_cripto.pop(moeda, None)
                 self.pesos.pop(moeda, None)
                 self.features_anteriores.pop(moeda, None)
-                self.mentes_pytorch.pop(moeda, None) 
                 self.preco_anterior.pop(moeda, None)
                 self.precos.pop(moeda, None)
-                print(f"[CRYPTO] 🗑️ Limpo registro local de {moeda}")
-            
-            # ⭐ Salva forçadamente
-            self.universo.salvar()
-        
-        print(f"[CRYPTO] 📊 ids_cripto depois: {self.ids_cripto}")
+                with self._lock_mentes:
+                    self.mentes_pytorch.pop(moeda, None)
+
         return removidas
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # RELATÓRIOS / STATS
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def gerar_relatorio_desempenho(self):
+        relatorio = []
+        for moeda, id_dado in self.ids_cripto.items():
+            mente_pt = self._garantir_mente(moeda)
+            if mente_pt is not None:
+                acertos = mente_pt.n_acertos[0] if mente_pt.n_acertos else 0
+                erros   = mente_pt.n_erros[0]   if mente_pt.n_erros   else 0
+                total   = acertos + erros
+                acuracia = (acertos / total * 100) if total > 0 else 0
+                confianca = min(100, acuracia)
+                categoria = "recommended" if acuracia >= 55 else ("bad" if acuracia < 45 else "learning")
+                relatorio.append({
+                    "symbol": moeda, "acertos": acertos, "erros": erros,
+                    "total": total, "acuracia": round(acuracia, 1),
+                    "confianca": round(confianca, 1), "categoria": categoria,
+                    "id": id_dado, "tipo": "pytorch_multi"
+                })
+            else:
+                mente = self.universo.mentes.obter(id_dado)
+                if mente is None:
+                    continue
+                total    = mente.n_acertos + mente.n_erros
+                acuracia = (mente.n_acertos / total * 100) if total > 0 else 0
+                confianca = min(100, acuracia)
+                categoria = "recommended" if acuracia >= 55 else ("bad" if acuracia < 45 else "learning")
+                relatorio.append({
+                    "symbol": moeda, "acertos": mente.n_acertos, "erros": mente.n_erros,
+                    "total": total, "acuracia": round(acuracia, 1),
+                    "confianca": round(confianca, 1), "categoria": categoria,
+                    "id": id_dado, "tipo": "classic"
+                })
+        relatorio.sort(key=lambda x: x["acuracia"], reverse=True)
+        return relatorio
+
+    def fetchAllAccuracies(self):
+        cache = {}
+        for moeda, id_dado in self.ids_cripto.items():
+            mente = self._garantir_mente(moeda)
+            if mente is not None:
+                acertos = mente.n_acertos[0] if mente.n_acertos else 0
+                erros   = mente.n_erros[0]   if mente.n_erros   else 0
+                total   = acertos + erros
+                acuracia = (acertos / total * 100) if total > 0 else 0
+                cache[moeda] = {"acuracia": round(acuracia, 1), "acertos": acertos, "total": total}
+            else:
+                mente_cls = self.universo.mentes.obter(id_dado)
+                if mente_cls:
+                    total    = mente_cls.n_acertos + mente_cls.n_erros
+                    acuracia = (mente_cls.n_acertos / total * 100) if total > 0 else 0
+                    cache[moeda] = {"acuracia": round(acuracia, 1),
+                                    "acertos": mente_cls.n_acertos, "total": total}
+                else:
+                    cache[moeda] = {"acuracia": 0, "acertos": 0, "total": 0}
+        return cache
+
     def carregar_ultimas_moedas(self):
-        """Carrega as últimas moedas que estavam rodando"""
         try:
-            import json
             import os
-            
             arquivo = "data/ultimas_moedas.json"
             if os.path.exists(arquivo):
                 with open(arquivo, "r") as f:
@@ -1001,82 +1131,89 @@ class CryptoApp:
         return []
 
     def salvar_ultimas_moedas(self):
-        """Salva as moedas que estão rodando"""
         try:
-            import json
             import os
-            
             os.makedirs("data", exist_ok=True)
             with open("data/ultimas_moedas.json", "w") as f:
                 json.dump(list(self.ids_cripto.keys()), f)
         except Exception as e:
-            print(f"[CRYPTO] Erro ao salvar últimas moedas: {e}")  
-
-    def fetchAllAccuracies(self):
-        """Busca acurácias das mentes PyTorch diretamente para o frontend"""
-        try:
-            cache = {}
-            for moeda, id_dado in self.ids_cripto.items():
-                # ⭐ PRIORIDADE: mente PyTorch
-                if moeda in self.mentes_pytorch:
-                    mente = self.mentes_pytorch[moeda]
-                    # Horizonte 5s (índice 0)
-                    acertos = mente.n_acertos[0] if len(mente.n_acertos) > 0 else 0
-                    erros = mente.n_erros[0] if len(mente.n_erros) > 0 else 0
-                    total = acertos + erros
-                    acuracia = (acertos / total * 100) if total > 0 else 0
-                    
-                    cache[moeda] = {
-                        "acuracia": round(acuracia, 1),
-                        "acertos": acertos,
-                        "total": total
-                    }
-                    print(f"[ACC] {moeda}: {acertos}/{total} = {acuracia:.1f}%")
-                else:
-                    # Fallback para mente clássica
-                    mente = self.universo.mentes.obter(id_dado)
-                    if mente:
-                        total = mente.n_acertos + mente.n_erros
-                        acuracia = (mente.n_acertos / total * 100) if total > 0 else 0
-                        cache[moeda] = {
-                            "acuracia": round(acuracia, 1),
-                            "acertos": mente.n_acertos,
-                            "total": total
-                        }
-                    else:
-                        cache[moeda] = {"acuracia": 0, "acertos": 0, "total": 0}
-            
-            return cache
-        except Exception as e:
-            print(f"Erro ao buscar acurácias: {e}")
-            return {} 
-
-     
-
+            print(f"[CRYPTO] Erro ao salvar últimas moedas: {e}")
 
     # ─────────────────────────────────────────────────────────────────────────
     # LOOP API
     # ─────────────────────────────────────────────────────────────────────────
 
     def loop_api(self):
-        print(f"[CRYPTO] 🔥 loop_api INICIADO para {list(self.ids_cripto.keys())}")
+        print("[CRYPTO] 🔥 loop_api INICIADO")
+        ultimo_salvar = time.time()
+
         while self.rodando_api:
             try:
-                print(f"[CRYPTO] 🔄 Buscando preços para: {list(self.ids_cripto.keys())}")
-                for moeda in list(self.ids_cripto.keys()):
-                    preco = pegar_preco(moeda)
-                    if preco is not None:
-                        self.precos[moeda] = preco
-                        print(f"[CRYPTO] ✅ {moeda} = ${preco:.2f}")
-                    else:
-                        print(f"[CRYPTO] ❌ {moeda} retornou None")
+                # ✅ FIX 11: Busca preços FORA do lock_universo
+                todos_precos = pegar_todos_precos()
+                if todos_precos:
+                    for moeda in list(self.ids_cripto.keys()):
+                        preco = todos_precos.get(moeda)
+                        if preco:
+                            self.precos[moeda] = preco
+                    print(f"[CRYPTO] ✅ Preços atualizados")
+                else:
+                    print("[CRYPTO] ❌ Erro ao buscar preços")
 
+                # ✅ FIX 12: Lock cobrindo apenas a seção de leitura/escrita de dados.
+                # O aprendizado PyTorch (dados_para_pytorch) ocorre em update()
+                # depois que o loop de dados termina — mas ainda dentro do lock.
+                # Para remover totalmente o PyTorch do lock, mova o aprendizado
+                # para cá fora, separando forward() (ainda precisa do dado) de
+                # aprender() (não precisa do dado). Já fizemos isso no update().
                 with lock_universo:
                     self.update()
+
+                agora = time.time()
+                if agora - ultimo_salvar > 60:
+                    print("[CRYPTO] 💾 Salvando modelos .pt...")
+                    # ✅ Salva mentes em background para não bloquear o loop
+                    self._executor.submit(self._salvar_mentes_background)
+                    ultimo_salvar = agora
 
             except Exception as e:
                 print(f"[CryptoApp] loop_api erro: {e}")
 
             time.sleep(self.delay)
+
+    # Encontre a moeda pelo ID e salve com o nome dela
+    def _salvar_mentes_background(self):
+        try:
+            with self._lock_mentes:
+                mentes_snapshot = dict(self.mentes_pytorch)
+            
+            # Mapa reverso: id → symbol
+            id_para_simbolo = {v: k for k, v in self.ids_cripto.items()}
+            
+            for moeda, mente in mentes_snapshot.items():
+                if mente is not None:
+                    try:
+                        # Salva com o nome da MOEDA, não do ID
+                        mente.salvar_com_nome(f"data/mentes_pytorch/mente_{moeda}.pt")
+                    except Exception as e:
+                        print(f"[CRYPTO] Erro ao salvar {moeda}: {e}")
+            
+            self.salvar_resultados_verificacao()
+            print("[CRYPTO] 💾 Mentes salvas")
+        except Exception as e:
+            print(f"[CRYPTO] Erro: {e}")
+
+    def salvar_resultados_verificacao(self):
+        """Salva os resultados de verificação em JSON"""
+        if not hasattr(self, 'resultados_verificacao'):
+            return
         
-        print(f"[CRYPTO] 🔥 loop_api ENCERRADO")
+        import os
+        os.makedirs("data/verificacoes", exist_ok=True)
+        
+        for moeda, resultados in self.resultados_verificacao.items():
+            arquivo = f"data/verificacoes/{moeda}.json"
+            with open(arquivo, "w") as f:
+                # Converte as chaves para string (JSON não aceita int como chave)
+                resultados_str = {str(k): v for k, v in resultados.items()}
+                json.dump(resultados_str, f, indent=2)

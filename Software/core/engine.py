@@ -233,6 +233,15 @@ class Universo:
         # Salva mentes junto (mas em arquivo separado)
         self.mentes.salvar()
 
+    def salvar_leve(self):
+        """Salva apenas dados do universo (rápido) - SEM modelos .pt"""
+        os.makedirs("data", exist_ok=True)
+        temp_path = self.caminho + ".tmp"
+        with open(temp_path, "w") as f:
+            json.dump({"ultimo_id": self.ultimo_id, "dados": self.dados}, f, indent=4)
+        os.replace(temp_path, self.caminho)
+        # ⭐ NÃO chama self.mentes.salvar()
+
     
 
         # engine.py - ajuste o final do método carregar

@@ -21,6 +21,15 @@ interface ApiStatus {
     previsao_15s?: number   // ⭐ ADICIONADO
     previsao_30s?: number   // ⭐ ADICIONADO
     previsao_60s?: number   // ⭐ ADICIONADO
+    previsao_300s?: number
+    previsao_900s?: number
+    previsao_1800s?: number
+    previsao_3600s?: number
+    previsao_18000s?: number
+    previsao_86400s?: number
+    consenso_curto?: number
+    consenso_medio?: number
+    consenso_longo?: number
     candles?: any[]
     accuracy?: number
   }>
@@ -46,6 +55,15 @@ export interface Unit {
   previsao_15s?: number   // ⭐ ADICIONADO
   previsao_30s?: number   // ⭐ ADICIONADO
   previsao_60s?: number   // ⭐ ADICIONADO
+  previsao_300s?: number
+  previsao_900s?: number
+  previsao_1800s?: number
+  previsao_3600s?: number
+  previsao_18000s?: number
+  previsao_86400s?: number
+  consenso_curto?: number
+  consenso_medio?: number
+  consenso_longo?: number
   candles?: any[]
   accuracy?: number
 }
@@ -76,10 +94,20 @@ function mapApiUnit(d: ApiStatus["dados"][0]): Unit {
     delta: d.delta,
     tipo: d.tipo,
     previsao: d.previsao ?? 0,
-    previsao_5s: (d as any).previsao_5s ?? 0,    // ⭐ ADICIONADO
-    previsao_15s: (d as any).previsao_15s ?? 0,  // ⭐ ADICIONADO
-    previsao_30s: (d as any).previsao_30s ?? 0,  // ⭐ ADICIONADO
-    previsao_60s: (d as any).previsao_60s ?? 0,  // ⭐ ADICIONADO
+    previsao_5s: (d as any).previsao_5s ?? 0,
+    previsao_15s: (d as any).previsao_15s ?? 0,
+    previsao_30s: (d as any).previsao_30s ?? 0,
+    previsao_60s: (d as any).previsao_60s ?? 0,
+   
+    previsao_300s: (d as any).previsao_300s ?? 0,
+    previsao_900s: (d as any).previsao_900s ?? 0,
+    previsao_1800s: (d as any).previsao_1800s ?? 0,
+    previsao_3600s: (d as any).previsao_3600s ?? 0,
+    previsao_18000s: (d as any).previsao_18000s ?? 0,
+    previsao_86400s: (d as any).previsao_86400s ?? 0,
+    consenso_curto: (d as any).consenso_curto ?? 0,
+    consenso_medio: (d as any).consenso_medio ?? 0,
+    consenso_longo: (d as any).consenso_longo ?? 0,
     candles: d.candles ?? [],
     accuracy: d.accuracy,
   }
