@@ -2,7 +2,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-
+import { API_BASE_URL } from '@/lib/api';
 interface TraderStats {
   acuracia_geral: number
   total_previsoes: number
@@ -52,7 +52,7 @@ export function useTraderStats() {
 
   const fetchStats = async () => {
     try {
-      const response = await fetch('http://localhost:8000/trader/stats')
+      const response = await fetch(`${API_BASE_URL}/trader/stats`)
       const data = await response.json()
       setStats(data)
     } catch (error) {

@@ -10,19 +10,32 @@ from Software.core.leis import evoluir_universo
 from Software.core.state import estado
 from Software.api import app
 
+# ⭐ FUNÇÃO PARA PEGAR O IP LOCAL DA MÁQUINA
+def get_local_ip():
+    try:
+        # Conecta a um IP externo para descobrir o IP local
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except:
+        return "localhost"
+
+LOCAL_IP = get_local_ip()
+print(f"🌐 Seu IP local: {LOCAL_IP}")
+print(f"📱 No celular, acesse: http://{LOCAL_IP}:3000")
 
 terminal_linhas = []
 contador = 0
 frontend_process = None
 
-
-# 🔍 verifica se porta está em uso
+# verifica se porta está em uso
 def porta_em_uso(porta):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(("127.0.0.1", porta)) == 0
 
-
-# 🔥 LOOP DO UNIVERSO
+# LOOP DO UNIVERSO
 def loop_simulacao():
     print("THREAD SIMULAÇÃO INICIADA")
     global contador
@@ -40,49 +53,48 @@ def loop_simulacao():
 
         time.sleep(0.1)
 
-
-# 🔥 FRONTEND (Next.js na porta 3000)
+# FRONTEND (Next.js na porta 3000 - HOST 0.0.0.0)
 def start_frontend():
     global frontend_process
-
-    # ⭐ MUDADO: porta do Next.js é 3000
     if porta_em_uso(3000):
         print("Frontend já está rodando na porta 3000")
         return
-
     print("Iniciando frontend Next.js...")
+    # ⭐ IMPORTANTE: `-- -H 0.0.0.0` permite acesso externo
     frontend_process = subprocess.Popen(
-        ["npm.cmd", "run", "dev"],
-        cwd="Dashboard"  # ou o nome da sua pasta do frontend
+        ["npm.cmd", "run", "dev", "--", "-H", "0.0.0.0"],  
+        cwd="Dashboard"
     )
 
-
-# 🔥 API
+# API
 def start_api():
     print("Iniciando API...")
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    # ⭐ host="0.0.0.0" permite acesso externo
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 
-
-# 🔥 AGUARDAR SERVIÇOS
 def esperar_servico(porta, nome):
     print(f"Aguardando {nome}...")
     while not porta_em_uso(porta):
         time.sleep(0.5)
     print(f"{nome} pronto!")
 
-
-# 🔥 INICIALIZAÇÃO
+# INICIALIZAÇÃO
 threading.Thread(target=loop_simulacao, daemon=True).start()
 threading.Thread(target=start_frontend, daemon=True).start()
 threading.Thread(target=start_api, daemon=True).start()
 
-# espera subir
 esperar_servico(8000, "API")
-esperar_servico(3000, "Frontend Next.js")  # ⭐ MUDADO para 3000
+esperar_servico(3000, "Frontend Next.js")
 
-# abre browser
-webbrowser.open("http://127.0.0.1:3000")  # ⭐ MUDADO para 3000
+# ⭐ MOSTRA O IP CORRETO PARA ACESSAR DO CELULAR
+print("\n" + "="*50)
+print(f"📱 Para acessar do seu CELULAR:")
+print(f"   1. Conecte o celular na mesma rede WiFi")
+print(f"   2. Abra o navegador e acesse: http://{LOCAL_IP}:3000")
+print(f"   3. A API está em: http://{LOCAL_IP}:8000")
+print("="*50 + "\n")
 
-# loop principal
+webbrowser.open(f"http://{LOCAL_IP}:3000")
+
 while True:
     time.sleep(1)

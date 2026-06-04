@@ -1,6 +1,6 @@
 // hooks/useCryptoStats.ts
 import { useState, useEffect, useCallback } from "react"
-
+import { API_BASE_URL } from '@/lib/api';
 interface CoinPerformance {
   symbol: string
   acertos: number
@@ -45,7 +45,7 @@ export function useCryptoStats() {
       setLoading(true)
       
       // ⭐ Busca do endpoint /trader/stats
-      const response = await fetch('/trader/stats')
+      const response = await fetch(`${API_BASE_URL}/trader/stats`)
       const data = await response.json()
       
       if (data) {

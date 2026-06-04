@@ -94,10 +94,6 @@ class BancoMentes:
 
                     self.mentes[id_] = mente
 
-            n = len(self.mentes)
-            print(f"[Mente] {n} mentes carregadas (metadados). "
-                  f"Modelos PyTorch serão carregados sob demanda.")
-
         except Exception as e:
             print(f"[Mente] Erro ao carregar mentes: {e}")
             with self._lock:

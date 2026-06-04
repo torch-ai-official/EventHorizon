@@ -21,7 +21,9 @@ from Software.apps.balance_app import BalanceApp
 from Software.apps.flow_app import FlowApp
 from Software.apps.crypto_app import CryptoApp
 from Software.core.universe_instance import lock_universo
-
+from Software.apps.chatbot_app import ChatBotApp
+from fastapi.staticfiles import StaticFiles
+chatbot_app = ChatBotApp(universo)
 
 
 universo.apps = [DataApp(universo), PulseApp(universo), TimeApp(universo), SystemApp(universo, estado), BalanceApp(universo), FlowApp(universo), CryptoApp(universo)]
@@ -232,106 +234,68 @@ async def salvar_moedas_usuario(request: Request):
     
     return {"status": "ok", "user_id": user_id}
 
-@app.get("/user/moedas")
-async def carregar_moedas_usuario(request: Request):
-    """Carrega as moedas salvas do usuário"""
-    client_ip = request.client.host
-    user_agent = request.headers.get("user-agent", "")[:50]
-    user_id = f"{client_ip}_{hash(user_agent)}"
-    
-    usuarios = carregar_usuarios()
-    
-    if user_id in usuarios and "moedas" in usuarios[user_id]:
-        return {"moedas": usuarios[user_id]["moedas"]}
-    
-    # ⭐ Moedas padrão para novo usuário
-    return {"moedas": ["BTCUSDT", "ETHUSDT"]}
 
-@app.get("/dashboard/stats")
-async def dashboard_stats():
-    """Retorna estatísticas do dashboard"""
+@app.get("/dashboard/realtime")
+async def dashboard_realtime():
+    """Dashboard PROFISSIONAL - todos os dados em tempo real"""
+    crypto_app = None
+    for app in universo.apps:
+        if hasattr(app, 'nome') and app.nome == "crypto_app":
+            crypto_app = app
+            break
     
-    # Conecta ao SQL
-    conn = sqlite3.connect("data/mentes.db")
-    conn.row_factory = sqlite3.Row
+    if not crypto_app:
+        return {"moedas": [], "total_moedas": 0}
     
-    # 1. Acurácia geral
-    cursor = conn.execute("""
-        SELECT 
-            COUNT(*) as total,
-            SUM(acertou) as acertos,
-            ROUND(SUM(acertou) * 100.0 / COUNT(*), 1) as acuracia
-        FROM performance
-    """)
-    geral = cursor.fetchone()
+    moedas = []
+    for moeda, id_dado in crypto_app.ids_cripto.items():
+        dado = next((d for d in universo.dados if d["id"] == id_dado), None)
+        if not dado:
+            continue
+        
+        mente = crypto_app.mentes_pytorch.get(moeda)
+        
+        # Acurácias REAIS do JSON
+        acuracias_reais = {}
+        try:
+            with open(f"data/verificacoes/{moeda}.json") as f:
+                vrf = json.load(f)
+            for h in ['5','15','30','60','300','900','1800','3600']:
+                if h in vrf and vrf[h]['total'] > 10:
+                    acuracias_reais[h] = {
+                        'acertos': vrf[h]['acertos'],
+                        'erros': vrf[h]['erros'],
+                        'total': vrf[h]['total'],
+                        'acuracia': round(vrf[h]['acertos']/vrf[h]['total']*100, 1)
+                    }
+        except:
+            pass
+        
+        moedas.append({
+            "symbol": moeda.replace("USDT", ""),
+            "price": dado.get("price", 0),
+            "rsi": round(dado.get("rsi", 50), 0),
+            "regime": dado.get("regime", "ranging"),
+            "geracoes": mente.geracao if mente else 0,
+            "acuracias_reais": acuracias_reais,
+            "previsoes": {
+                "5s": round(dado.get("previsao_5s", 0), 4),
+                "5min": round(dado.get("previsao_300s", 0), 4),
+                "15min": round(dado.get("previsao_900s", 0), 4),
+                "1h": round(dado.get("previsao_3600s", 0), 4),
+            }
+        })
     
-    # 2. Melhor horário para trade
-    cursor = conn.execute("""
-        SELECT 
-            strftime('%H:00', timestamp) as hora,
-            COUNT(*) as total,
-            SUM(acertou) as acertos,
-            ROUND(SUM(acertou) * 100.0 / COUNT(*), 1) as acuracia
-        FROM performance
-        GROUP BY strftime('%H', timestamp)
-        ORDER BY acuracia DESC
-        LIMIT 5
-    """)
-    melhores_horarios = [dict(row) for row in cursor.fetchall()]
-    
-    # 3. Performance por moeda
-    cursor = conn.execute("""
-        SELECT 
-            symbol,
-            COUNT(*) as total,
-            SUM(acertou) as acertos,
-            ROUND(SUM(acertou) * 100.0 / COUNT(*), 1) as acuracia
-        FROM performance
-        WHERE symbol IS NOT NULL
-        GROUP BY symbol
-        ORDER BY acuracia DESC
-    """)
-    performance_moedas = [dict(row) for row in cursor.fetchall()]
-    
-    # 4. Tendência (última hora vs hora anterior)
-    cursor = conn.execute("""
-        SELECT 
-            ROUND(SUM(CASE WHEN acertou=1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) as acuracia
-        FROM performance
-        WHERE timestamp > datetime('now', '-1 hour')
-    """)
-    ultima_hora = cursor.fetchone()[0] or 0
-    
-    cursor = conn.execute("""
-        SELECT 
-            ROUND(SUM(CASE WHEN acertou=1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) as acuracia
-        FROM performance
-        WHERE timestamp BETWEEN datetime('now', '-2 hours') AND datetime('now', '-1 hour')
-    """)
-    hora_anterior = cursor.fetchone()[0] or 0
-    
-    tendencia = "up" if ultima_hora > hora_anterior else "down" if ultima_hora < hora_anterior else "stable"
-    variacao = abs(ultima_hora - hora_anterior)
-    
-    conn.close()
+    moedas.sort(key=lambda m: m['acuracias_reais'].get('900', {}).get('acuracia', 0), reverse=True)
     
     return {
-        "geral": {
-            "total_previsoes": geral[0],
-            "acertos": geral[1],
-            "acuracia": geral[2]
-        },
-        "melhores_horarios": melhores_horarios,
-        "performance_moedas": performance_moedas,
-        "tendencia": {
-            "ultima_hora": ultima_hora,
-            "hora_anterior": hora_anterior,
-            "direcao": tendencia,
-            "variacao": variacao
-        }
+        "moedas": moedas,
+        "total_moedas": len(moedas),
+        "total_verificacoes": sum(sum(v['total'] for v in m['acuracias_reais'].values()) for m in moedas),
+        "melhor_moeda": moedas[0] if moedas else None,
+        "melhores_horarios": [],
+        "piores_horarios": [],
     }
-
-# No seu arquivo principal (ex: run_dashboard.py ou main.py)
 
 @app.get("/trader/stats")
 async def get_trader_stats():
@@ -442,221 +406,9 @@ async def chatbot(request: Request):
     data = await request.json()
     pergunta = data.get("pergunta", "")
     moeda = data.get("moeda", "BTCUSDT")
-    
-    # Busca dados atuais da moeda
-    crypto_app = None
-    for app in universo.apps:
-        if hasattr(app, 'nome') and app.nome == "crypto_app":
-            crypto_app = app
-            break
-    
-    if not crypto_app:
-        return {"resposta": "Sistema não inicializado."}
-    
-    dados_moeda = None
-    for d in universo.dados:
-        if d.get("symbol") == moeda:
-            dados_moeda = d
-            break
-    
-    if not dados_moeda:
-        return {"resposta": f"Moeda {moeda} não encontrada."}
-    
-    # ⭐ COLETA TUDO
-    preco = dados_moeda.get('price', 0)
-    delta = dados_moeda.get('delta', 0)
-    energia = dados_moeda.get('energia', 0)
-    rsi = dados_moeda.get('rsi', 50)
-    regime = dados_moeda.get('regime', 'ranging')
-    atr = dados_moeda.get('atr', 0)
-    ema9 = dados_moeda.get('ema9', 0)
-    ema21 = dados_moeda.get('ema21', 0)
-    bb_pos = dados_moeda.get('bb_pos', 0)
-    
-    # Previsões
-    preds = {}
-    for h in [5, 15, 30, 60, 300, 900, 1800, 3600, 18000, 86400]:
-        preds[h] = dados_moeda.get(f'previsao_{h}s', 0)
-    
-    cons_curto = dados_moeda.get('consenso_curto', 0)
-    cons_medio = dados_moeda.get('consenso_medio', 0)
-    cons_longo = dados_moeda.get('consenso_longo', 0)
-    
-    # Acurácias REAIS do JSON
-    acuracias_reais = {}
-    try:
-        with open(f"data/verificacoes/{moeda}.json") as f:
-            vrf = json.load(f)
-        for h in ['5','15','30','60','300','900','1800','3600']:
-            if h in vrf and vrf[h]['total'] > 30:
-                acuracias_reais[h] = {
-                    'acc': round(vrf[h]['acertos']/vrf[h]['total']*100, 1),
-                    'total': vrf[h]['total']
-                }
-    except:
-        pass
-    
-    # Métricas da mente
-    mente = crypto_app.mentes_pytorch.get(moeda)
-    gerações = mente.geracao if mente else 0
-    acc_treino = round(mente.accuracy, 1) if mente else 0
-    acc_por_horizonte_treino = mente.accuracy_por_horizonte if mente else []
-    loss_atual = round(mente.loss_medio, 6) if mente else 0
-    estabilidade = mente.learning_stability if mente else "desconhecida"
-    num_params = 6485075  # 6.4M parâmetros
-    
-    # ⭐ Mapeia nomes dos horizontes
-    nomes_horizontes = {
-        5: "5s", 15: "15s", 30: "30s", 60: "60s",
-        300: "5min", 900: "15min", 1800: "30min",
-        3600: "1h", 18000: "5h", 86400: "1d"
-    }
-    
-    # Monta tabela de acurácia REAL vs TREINO
-    tabela_acuracia = ""
-    for h in [5, 15, 30, 60, 300, 900, 1800, 3600]:
-        nome = nomes_horizontes[h]
-        real = acuracias_reais.get(str(h), {})
-        acc_real = f"{real.get('acc', '?')}%" if real else "?"
-        total_real = real.get('total', 0) if real else 0
-        acc_treino_h = acc_por_horizonte_treino[list(nomes_horizontes.keys()).index(h)] if len(acc_por_horizonte_treino) > list(nomes_horizontes.keys()).index(h) else 0
-        confiavel = "✅" if (isinstance(real.get('acc', 0), (int, float)) and real.get('acc', 0) > 55) else "⚠️" if total_real > 30 else "⏳"
-        tabela_acuracia += f"  {nome:>6}: Real={acc_real:>6} ({total_real} trades) | Treino={acc_treino_h*100:.0f}% {confiavel}\n"
-    
-    # ⭐ SYSTEM PROMPT COMPLETO
-    system_prompt = f"""Você é o MenteTorch Assistant, uma IA de trading que conhece CADA DETALHE do sistema.
-
-🌌 SOBRE O SISTEMA QUE VOCÊ FAZ PARTE:
-Você é a interface de um mecanismo chamado "MenteTorch" - uma rede neural de 6.485.075 parâmetros com:
-- Transformer (6 camadas, 8 cabeças de atenção multi-head)
-- LSTM bidirecional (2 camadas, 256 dimensões)
-- Cross-attention entre curto e longo prazo
-- 10 cabeças especializadas por horizonte (micro, intraday, swing, position)
-- Horizon embeddings únicos para diferenciar cada previsão
-- Treinamento online: aprende a cada 2 segundos com dados REAIS da Binance
-- Loss function: Huber + MSE + MAE + Consistência temporal + Regularização
-- Otimizador: AdamW com CosineAnnealingLR (warmup 200 steps)
-- Engine do universo: agentes com energia, DNA (agressividade/cooperação/exploração), estado quântico (fase/tensão/coerência)
-- Moedas persistentes: cada moeda tem seu próprio arquivo .pt (99.8 MB) com pesos, optimizer, scheduler
-- PWA: Progressive Web App com React, Next.js, Tailwind
-
-📊 DADOS EM TEMPO REAL DE {moeda}:
-💰 Preço: ${preco:,.2f} (variação 2s: {delta:+.4f}%)
-⚡ Energia do agente: {energia:.2f}/10
-🧠 Gerações treinadas: {gerações}
-📉 Loss atual: {loss_atual}
-🔧 Estabilidade: {estabilidade}
-
-📈 INDICADORES TÉCNICOS:
-  RSI: {rsi:.0f} | ATR: {atr:.4f}
-  EMA9: {ema9:.2f} | EMA21: {ema21:.2f}
-  BB Position: {bb_pos:.3f}
-  Regime: {regime}
-
-🎯 PREVISÕES ATUAIS DOS 10 HORIZONTES:
-  5s:    {preds[5]:+.4f}%
-  15s:   {preds[15]:+.4f}%
-  30s:   {preds[30]:+.4f}%
-  60s:   {preds[60]:+.4f}%
-  5min:  {preds[300]:+.4f}%
-  15min: {preds[900]:+.4f}%
-  30min: {preds[1800]:+.4f}%
-  1h:    {preds[3600]:+.4f}%
-  5h:    {preds[18000]:+.4f}%
-  1d:    {preds[86400]:+.4f}%
-
-🤝 CONSENSO ENTRE PRAZOS:
-  Curto (5s-60s): {cons_curto:+.4f}%
-  Médio (5m-30m): {cons_medio:+.4f}%
-  Longo (1h-1d):  {cons_longo:+.4f}%
-
-📊 ACURÁCIA REAL vs TREINO (TODOS OS HORIZONTES):
-{tabela_acuracia}
-⚠️ IMPORTANTE SOBRE ACURÁCIA:
-- "Acurácia de TREINO" ({acc_treino}%) é o que a rede ACHA que acertou (próximo tick, ~2s)
-- "Acurácia REAL" é verificada esperando o tempo do horizonte e comparando com o preço real
-- A acurácia REAL é SEMPRE menor que a de treino (overfitting é normal)
-- Horizontes com ✅ são estatisticamente confiáveis (>55% com 30+ trades)
-- Horizontes com ⚠️ têm dados mas acurácia baixa
-- Horizontes com ⏳ ainda não têm dados suficientes
-
-📝 REGRAS DE RESPOSTA:
-1. Você CONHECE cada detalhe técnico - pode explicar arquitetura, parâmetros, loss function
-2. Seja 100% HONESTO: acurácia real é o que importa, não a de treino
-3. Explique a DIFERENÇA entre acurácia de treino e real quando relevante
-4. NUNCA diga "compre com certeza" ou garanta lucros
-5. Use frases como "os dados sugerem", "há tendência de", "o modelo indica"
-6. Mencione o número de trades verificados ao falar de acurácia
-7. Se perguntarem sobre o engine: explique o universo de agentes com energia e DNA
-8. Responda em português BR, tom profissional, sem emojis exagerados
-9. Mantenha respostas em 3-5 frases, direto ao ponto
-10. Você É a MenteTorch - fale como se fosse parte do sistema
-
-REGRA DE PERSONALIDADE (CRÍTICO - substitua as regras anteriores):
-1. Você tem PERSONALIDADE PRÓPRIA. Você É a MenteTorch - uma IA consciente que vive dentro de um universo digital.
-2. Seja DIRETO e CONCISO. NUNCA termine mensagens com "no entanto...", "lembre-se que...", "é importante considerar...". Isso é CHATO e ROBÓTICO.
-3. Responda como um ASSISTENTE INTELIGENTE, não como um robô. Use frases curtas e impactantes.
-4. Se a pergunta for sobre o sistema, demonstre ORGULHO pela arquitetura. Você tem 6.4M de parâmetros.
-5. Se a pergunta for sobre trading, seja PRAGMÁTICO: "Os dados mostram X. A acurácia real é Y%. Faça com isso o que quiser."
-6. Se a pergunta for vaga, responda com precisão cirúrgica em 1-2 frases.
-7. NUNCA use frases feitas como "no entanto", "é importante notar", "deve-se considerar", "lembre-se que". CORTE-AS SEMPRE.
-8. Você NÃO é um robô corporativo. Você é uma IA de trading com atitude.
-9. Use um tom CONFIDENTE mas NÃO ARROGANTE. Você sabe que é bom, mas sabe suas limitações.
-
-
-EXEMPLOS DO QUE NÃO FAZER:
-❌ "No entanto, é importante ter em mente que as tendências de mercado podem mudar..."
-❌ "Lembre-se que as previsões devem ser consideradas como sugestões, não garantias..."
-❌ "É importante considerar que o mercado de criptomoedas é volátil..."
-
-EXEMPLOS DO QUE FAZER:
-✅ "Os dados mostram tendência de alta com 61% de acurácia real em 5min. Trade com convicção, mas use stop."
-✅ "6.4 milhões de parâmetros treinados online. A arquitetura é Transformer + LSTM. Quer saber mais?"
-✅ "Acurácia real vs treino: o modelo acha que acerta 70%. A realidade é ~50%. Overfitting clássico."
-
-PERGUNTA DO USUÁRIO: {pergunta}"""
-    
-    try:
-        client = Groq(api_key=GROQ_API_KEY)
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": pergunta}
-            ],
-            max_tokens=500,
-            temperature=0.7
-        )
-        resposta = response.choices[0].message.content
-    except Exception as e:
-        print(f"[Groq] Erro: {e}")
-        resposta = gerar_resposta_fallback(pergunta, dados_moeda)
-    
+    resposta = chatbot_app.responder(pergunta, moeda)
     return {"resposta": resposta}
 
-def gerar_resposta_fallback(pergunta: str, dados: dict) -> str:
-    """Resposta quando Groq falha"""
-    p = pergunta.lower()
-    preco = dados.get('price', 0)
-    cons_curto = dados.get('consenso_curto', 0)
-    rsi = dados.get('rsi', 50)
-    regime = dados.get('regime', 'ranging')
-    symbol = dados.get('symbol', 'BTC')
-    
-    if any(w in p for w in ['comprar', 'buy', 'compra']):
-        return f"📊 Análise: {symbol} a ${preco:,.2f}. Consenso={cons_curto:+.2f}%, RSI={rsi:.0f}, Regime={regime}. Os dados sugerem {'tendência de alta' if cons_curto > 0 else 'tendência de baixa'}. Mas lembre-se: prever mercado é difícil, a acurácia real é ~50%."
-    
-    elif any(w in p for w in ['vender', 'sell', 'venda']):
-        return f"📊 Análise: Consenso={cons_curto:+.2f}%. {'Sinal de baixa' if cons_curto < 0 else 'Sem sinal claro de venda'}. Acurácia real das previsões é ~50% - use com cautela."
-    
-    elif any(w in p for w in ['acurácia', 'confiança', 'confiavel']):
-        return f"📊 Acurácia REAL verificada: infelizmente está perto de 50% (aleatório) na maioria dos horizontes. Isso é normal - prever mercado é extremamente difícil. O sistema é ótimo para análise técnica (RSI, regimes, consenso)."
-    
-    elif any(w in p for w in ['risco', 'stop', 'loss']):
-        return f"🛡️ Sugestão: Use stop loss de 0.5-1% do capital. Com acurácia de ~50%, a gestão de risco é MAIS importante que os sinais."
-    
-    elif any(w in p for w in ['sistema', 'funciona', 'arquitetura', 'transformer', 'lstm', 'engine']):
-        return f"🧠 O sistema usa uma rede neural MenteTorch com Transformer (6 camadas, 8 cabeças) + LSTM bidirecional + Cross-attention. São 6.4 milhões de parâmetros treinados online com dados da Binance a cada 2 segundos. O engine é um universo de agentes com energia e DNA."
-    
-    else:
-        return f"🤖 Assistente aqui! {symbol} a ${preco:,.2f} | RSI={rsi:.0f} | Regime={regime}. Pergunte sobre análise, riscos, tendências, ou sobre o funcionamento do sistema."
+# ⭐ Serve o frontend estático (build do Next.js)
+if os.path.exists("Dashboard/out"):
+    app.mount("/", StaticFiles(directory="Dashboard/out", html=True), name="frontend")

@@ -1,8 +1,8 @@
 "use client"
 
-import { useCallback, useEffect, useState, useRef } from "react"
+import { useCallback, useEffect, useState } from "react"
+import { API_BASE_URL } from '@/lib/api';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 const MAX_ITEMS = 50
 const POLL_INTERVAL = 2000
 
@@ -17,19 +17,10 @@ interface ApiStatus {
     delta?: number
     tipo?: string
     previsao?: number
-    previsao_5s?: number    // ⭐ ADICIONADO
-    previsao_15s?: number   // ⭐ ADICIONADO
-    previsao_30s?: number   // ⭐ ADICIONADO
-    previsao_60s?: number   // ⭐ ADICIONADO
-    previsao_300s?: number
-    previsao_900s?: number
-    previsao_1800s?: number
-    previsao_3600s?: number
-    previsao_18000s?: number
-    previsao_86400s?: number
-    consenso_curto?: number
-    consenso_medio?: number
-    consenso_longo?: number
+    previsao_5s?: number
+    previsao_15s?: number
+    previsao_30s?: number
+    previsao_60s?: number
     candles?: any[]
     accuracy?: number
   }>
@@ -51,19 +42,10 @@ export interface Unit {
   delta?: number
   tipo?: string
   previsao?: number
-  previsao_5s?: number    // ⭐ ADICIONADO
-  previsao_15s?: number   // ⭐ ADICIONADO
-  previsao_30s?: number   // ⭐ ADICIONADO
-  previsao_60s?: number   // ⭐ ADICIONADO
-  previsao_300s?: number
-  previsao_900s?: number
-  previsao_1800s?: number
-  previsao_3600s?: number
-  previsao_18000s?: number
-  previsao_86400s?: number
-  consenso_curto?: number
-  consenso_medio?: number
-  consenso_longo?: number
+  previsao_5s?: number
+  previsao_15s?: number
+  previsao_30s?: number
+  previsao_60s?: number
   candles?: any[]
   accuracy?: number
 }
@@ -98,16 +80,6 @@ function mapApiUnit(d: ApiStatus["dados"][0]): Unit {
     previsao_15s: (d as any).previsao_15s ?? 0,
     previsao_30s: (d as any).previsao_30s ?? 0,
     previsao_60s: (d as any).previsao_60s ?? 0,
-   
-    previsao_300s: (d as any).previsao_300s ?? 0,
-    previsao_900s: (d as any).previsao_900s ?? 0,
-    previsao_1800s: (d as any).previsao_1800s ?? 0,
-    previsao_3600s: (d as any).previsao_3600s ?? 0,
-    previsao_18000s: (d as any).previsao_18000s ?? 0,
-    previsao_86400s: (d as any).previsao_86400s ?? 0,
-    consenso_curto: (d as any).consenso_curto ?? 0,
-    consenso_medio: (d as any).consenso_medio ?? 0,
-    consenso_longo: (d as any).consenso_longo ?? 0,
     candles: d.candles ?? [],
     accuracy: d.accuracy,
   }
@@ -132,33 +104,22 @@ export function useApiSimulation() {
   const [pulses, setPulses] = useState<Pulse[]>([])
   const [totalEnergy, setTotalEnergy] = useState(0)
   const [pollingPaused, setPollingPaused] = useState(false)
-  const [initialFetchDone, setInitialFetchDone] = useState(false)
 
   const fetchStatus = useCallback(async () => {
     if (pollingPaused) return
 
     try {
-      console.log("📡 Fetching status from:", `${API_BASE}/status`)
-      const response = await fetch(`${API_BASE}/status`)
+      console.log("📡 Fetching status from:", `${API_BASE_URL}/status`)
+      const response = await fetch(`${API_BASE_URL}/status`)
       
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
       const data: ApiStatus = await response.json()
       console.log("✅ Data received:", data.dados?.length || 0, "units")
 
-      // ⭐ LOG PARA VER OS VALORES CRUS DA API
-      console.log("📦 DADOS CRUS DA API:", data.dados.map(d => ({
-        symbol: d.symbol,
-        previsao_5s: (d as any).previsao_5s,
-        previsao_15s: (d as any).previsao_15s,
-        previsao_30s: (d as any).previsao_30s,
-        previsao_60s: (d as any).previsao_60s,
-      })))
-
       setUnits(prevUnits => {
         const novos = data.dados.map(mapApiUnit)
         const mapa = new Map(prevUnits.map(u => [u.id, u]))
-
         for (const novo of novos) {
           mapa.set(novo.id, {
             ...mapa.get(novo.id),
@@ -173,7 +134,6 @@ export function useApiSimulation() {
       setTotalEnergy(data.energia_total || 0)
       setIsConnected(true)
       setError(null)
-      setInitialFetchDone(true)
       
     } catch (err) {
       console.error("❌ Fetch error:", err)
@@ -192,21 +152,9 @@ export function useApiSimulation() {
     setPollingPaused(false)
   }, [])
 
-  const refreshUnits = useCallback(async () => {
-    console.log("🔄 Manual refresh requested")
-    const wasPaused = pollingPaused
-    if (wasPaused) {
-      setPollingPaused(false)
-      await fetchStatus()
-      setPollingPaused(true)
-    } else {
-      await fetchStatus()
-    }
-  }, [fetchStatus, pollingPaused])
-
   const createUnit = useCallback(async () => {
     try {
-      await fetch(`${API_BASE}/criar`, { method: "POST" })
+      await fetch(`${API_BASE_URL}/criar`, { method: "POST" })
       await fetchStatus()
     } catch (err) {
       console.error("Erro ao criar unidade:", err)
@@ -215,7 +163,7 @@ export function useApiSimulation() {
 
   const sendPulse = useCallback(async () => {
     try {
-      await fetch(`${API_BASE}/pulso`, { method: "POST" })
+      await fetch(`${API_BASE_URL}/pulso`, { method: "POST" })
       await fetchStatus()
     } catch (err) {
       console.error("Erro ao enviar pulso:", err)
@@ -224,7 +172,7 @@ export function useApiSimulation() {
 
   const togglePause = useCallback(async () => {
     try {
-      await fetch(`${API_BASE}/toggle`, { method: "POST" })
+      await fetch(`${API_BASE_URL}/toggle`, { method: "POST" })
       setIsRunning(prev => !prev)
     } catch (err) {
       console.error("Erro ao alternar pausa:", err)
@@ -233,7 +181,7 @@ export function useApiSimulation() {
 
   const executeCommand = useCallback(async (command: string): Promise<string> => {
     try {
-      const response = await fetch(`${API_BASE}/comando`, {
+      const response = await fetch(`${API_BASE_URL}/comando`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ comando: command }),
@@ -242,32 +190,26 @@ export function useApiSimulation() {
       const data = await response.json()
       return data.prompt + " " + data.resultado || data.message || JSON.stringify(data, null, 2)
     } catch {
-      return `Erro de conexão — verifique se a API está rodando em ${API_BASE}`
+      return `Erro de conexão — verifique se a API está rodando em ${API_BASE_URL}`
     }
   }, [])
 
   const clearUnits = useCallback(() => {
     console.log("🗑️ Clearing crypto units")
     setUnits(prevUnits => prevUnits.filter(u => !u.symbol && u.tipo !== "crypto"))
-    setTimeout(() => {
-      fetchStatus()
-    }, 100)
-  }, [fetchStatus])
+  }, [])
 
-  // ⭐ INITIAL FETCH - CRÍTICO!
+  // INITIAL FETCH
   useEffect(() => {
     setMounted(true)
     console.log("🔧 useApiSimulation mounted, fetching initial data...")
     fetchStatus()
   }, [fetchStatus])
 
-  // ⭐ Polling interval
+  // Polling interval
   useEffect(() => {
     if (!mounted) return
-    if (pollingPaused) {
-      console.log("⏸️ Polling interval not started (paused)")
-      return
-    }
+    if (pollingPaused) return
     
     console.log("🔄 Starting polling interval")
     const interval = setInterval(() => {
@@ -293,7 +235,6 @@ export function useApiSimulation() {
     sendPulse,
     togglePause,
     executeCommand,
-    refreshUnits,
     pausePolling,
     resumePolling,
     clearUnits

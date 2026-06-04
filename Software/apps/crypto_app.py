@@ -5,14 +5,14 @@ import os
 import torch
 import requests
 import random
-import math
+
 import time
 import threading
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from Software.core.universe_instance import lock_universo
 from Software.core.mind_pytorch import MenteTorch, HORIZONTES, N_HORIZONTES
-
+from Software.core.mind_pytorch import DelayedRewardBuffer
 def pegar_todos_precos(tentativas=2):
     url = "https://api.binance.com/api/v3/ticker/price"
     for _ in range(tentativas):
@@ -225,6 +225,7 @@ class CryptoApp:
         self.rodando_api   = False
         self.timeframe     = 5
         self.loop_thread   = None
+        self.buffers: dict[str, DelayedRewardBuffer] = {}
         
         self.verificacoes: dict[str, deque] = {}
         self.resultados_verificacao: dict[str, dict] = {}
@@ -245,6 +246,8 @@ class CryptoApp:
             "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT",
             "SOLUSDT", "DOGEUSDT", "DOTUSDT", "MATICUSDT", "LTCUSDT"
         ]
+
+        self.carregar_ultimas_moedas()
 
     # ─────────────────────────────────────────────────────────────────────────
     # INICIALIZAÇÃO ASSÍNCRONA DE MENTES
@@ -304,6 +307,7 @@ class CryptoApp:
         if comando.startswith("crypto spawn"):
             partes = comando.split()
             moedas = [m.upper() for m in partes[2:]]
+            self.salvar_ultimas_moedas()  # ✅ FORÇA SALVAR
             return self.spawn_moedas(moedas)
 
         if comando == "crypto signal":
@@ -342,6 +346,7 @@ class CryptoApp:
             partes = comando.split()
             moedas = [m.upper() for m in partes[2:]]
             removidas = self.remover_moedas_selecionadas(moedas)
+            self.salvar_ultimas_moedas()  # ✅ ATUALIZA APÓS REMOVER
             return [f"Removidas: {', '.join(removidas)}" if removidas else "Nenhuma moeda removida"]
 
         if comando.startswith("crypto "):
@@ -536,6 +541,48 @@ class CryptoApp:
                 preds_raw = mente.forward(features)
                 preds_percentual = [p * 5.0 for p in preds_raw]
                 preds_para_verificar = preds_percentual.copy()  # VALORES PUROS DA REDE
+
+                # ✅ Proteção contra NaN
+    
+                tem_nan = False
+                for i, val in enumerate(preds_percentual):
+                    if math.isnan(val) or math.isinf(val):
+                        preds_percentual[i] = 0.0  # Substitui NaN por 0
+                        tem_nan = True
+
+                if tem_nan:
+                    print(f"[{moeda}] ⚠️ NaN detectado nas previsões! Substituído por 0.")
+                    # Opcional: recarrega o modelo do disco para recuperar
+                    if moeda in self.mentes_pytorch and self.mentes_pytorch[moeda] is not None:
+                        arquivo = f"data/mentes_pytorch/mente_{moeda}.pt"
+                        if os.path.exists(arquivo):
+                            try:
+                                self.mentes_pytorch[moeda].carregar()
+                                print(f"[{moeda}] 🔄 Modelo recarregado do disco (recuperação de NaN)")
+                            except:
+                                pass
+                # ✅ DELAYED REWARD BUFFER: aprendizado GENUÍNO com recompensa REAL
+                if moeda not in self.buffers:
+                    self.buffers[moeda] = DelayedRewardBuffer(HORIZONTES, self.timeframe)
+
+                # ✅ Registra SEMPRE (toda iteração)
+                self.buffers[moeda].registrar(time.time(), preds_percentual.copy(), preco)
+
+                # ✅ Coleta SEMPRE
+                # ✅ Coleta recompensas maduras
+                recompensas_maduras = self.buffers[moeda].coletar_maduras(time.time(), preco)
+
+                if recompensas_maduras:
+                    # Junta todas as recompensas maduras
+                    recompensas_array = [0.0] * N_HORIZONTES
+                    for i, rec in recompensas_maduras:
+                        recompensas_array[i] = rec
+                    
+                    # Treina UMA VEZ com todas as recompensas
+                    try:
+                        mente.aprender(recompensas_array)
+                    except Exception as e:
+                        print(f"[PyTorch] Erro no aprendizado: {e}")
                 # ✅ VERIFICAÇÃO REAL POR HORIZONTE
                 if not hasattr(self, 'verificacoes'):
                     self.verificacoes = {}
@@ -622,23 +669,7 @@ class CryptoApp:
                 for i, h in enumerate(HORIZONTES):
                     print(f"   {h}s: {preds_percentual[i]:.6f}")
 
-                # 🔍 LOG 2: Após jitter
-                import hashlib
-                for i in range(4, 10):
-                    seed_str = f"{moeda}_{HORIZONTES[i]}"
-                    seed = int(hashlib.md5(seed_str.encode()).hexdigest()[:8], 16)
-                    rng = random.Random(seed)
-                    if i < 7:
-                        offset = rng.uniform(-0.04, 0.04)
-                    elif i < 9:
-                        offset = rng.uniform(-0.06, 0.06)
-                    else:
-                        offset = rng.uniform(-0.08, 0.08)
-                    preds_percentual[i] += offset
-
-                print(f"\n🔍 [DEBUG {moeda}] Após JITTER:")
-                for i in range(4, 10):
-                    print(f"   {HORIZONTES[i]}s: {preds_percentual[i]:.6f}")
+            
 
                 # 🔍 LOG 3: Após EMA
                 if not hasattr(self, '_historico_predicoes'):
@@ -732,49 +763,6 @@ class CryptoApp:
             confianca = min(abs(previsao), 1.0)
             recompensa = (confianca if acertou else -confianca) * 2.0
 
-            # ✅ FIX 8: Recompensas por horizonte (ATUALIZADO para 10 horizontes)
-            if mente is not None and isinstance(precos, list) and len(precos) > 1:
-                recompensas_horizonte = []
-                for i, horizonte in enumerate(HORIZONTES):
-                    passos = max(1, horizonte // self.timeframe)
-                    
-                    if len(precos) > passos and passos < len(precos):
-                        # ✅ Para horizontes longos, usa agregação de candles
-                        if passos > len(precos):
-                            preco_futuro = precos[-1]  # Fallback
-                        else:
-                            # Média dos últimos N preços para horizontes > 60s
-                            if horizonte > 60:
-                                precos_janela = precos[-min(passos, len(precos)):]
-                                preco_futuro = sum(precos_janela) / len(precos_janela)
-                            else:
-                                preco_futuro = precos[-min(passos, len(precos) - 1)]
-                        
-                        retorno_real = (preco_futuro - preco) / preco * 100
-                        
-                        # ✅ Normalização diferente por horizonte
-                        if horizonte <= 60:
-                            # Curto prazo: range maior
-                            retorno_normalizado = max(-5, min(5, retorno_real))
-                        elif horizonte <= 3600:
-                            # Médio prazo: range médio
-                            retorno_normalizado = max(-3, min(3, retorno_real))
-                        else:
-                            # Longo prazo: range menor (mais estável)
-                            retorno_normalizado = max(-2, min(2, retorno_real))
-                        
-                        recompensas_horizonte.append(retorno_normalizado / 5.0)
-                    else:
-                        # ✅ Para horizontes sem dados suficientes, usa 0 com decay
-                        recompensas_horizonte.append(0.0)
-
-                # ✅ Validação mantida
-                valida = (
-                    len(recompensas_horizonte) == N_HORIZONTES and
-                    not any(math.isnan(r) or math.isinf(r) for r in recompensas_horizonte)
-                )
-                if valida:
-                    dados_para_pytorch.append((mente, recompensas_horizonte))
 
             # SQL
             try:
@@ -814,14 +802,7 @@ class CryptoApp:
             dado["price"]    = preco
             dado["delta"]    = preco - precos[-2]
 
-        # ✅ FIX 9: Aprendizado PyTorch acontece DEPOIS do loop, sem lock_universo.
-        # A única operação que segura lock é a leitura de dados acima.
-        # Backprop pode levar dezenas de ms — não pode estar dentro do lock.
-        for mente, recompensas_horizonte in dados_para_pytorch:
-            try:
-                mente.aprender(recompensas_horizonte)
-            except Exception as e:
-                print(f"[PyTorch] Erro no aprendizado: {e}")
+        
 
     # ─────────────────────────────────────────────────────────────────────────
     # SINAIS
@@ -1189,6 +1170,9 @@ class CryptoApp:
             
             # Mapa reverso: id → symbol
             id_para_simbolo = {v: k for k, v in self.ids_cripto.items()}
+
+            self.salvar_ultimas_moedas()
+            self.salvar_resultados_verificacao()
             
             for moeda, mente in mentes_snapshot.items():
                 if mente is not None:

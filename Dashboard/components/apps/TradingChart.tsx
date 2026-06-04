@@ -87,31 +87,51 @@ function gerarVelasFuturas(
   preds: { time: number; value: number }[],
   atr: number
 ): Candle[] {
-  const baseVol = Math.max(atr, price * 0.0005)
+  // Mínimo robusto: 0.1% do preço ou ATR, o que for maior
+  const minBody = Math.max(atr * 0.5, price * 0.001)
+  const baseVol  = Math.max(atr, price * 0.001)
+
   return preds.map((pred, i) => {
-    const predictedClose = price * (1 + pred.value / 100)
-    const body = Math.max(Math.abs(predictedClose - price), price * 0.00005)
     const seed = (((bucketBase + pred.time) * (i + 13) * 811) % 1009) / 1009
-    const wickHigh = baseVol * (0.35 + seed * 0.45 + i * 0.08) + body * 0.45 + price * 0.00012
-    const wickLow  = baseVol * (0.25 + (1 - seed) * 0.5 + (i + 1) * 0.06) + body * 0.28 + price * 0.00009
+
+    // Direção da vela — se pred.value for quase zero, usa seed para decidir
+    const hasSignal = Math.abs(pred.value) > 0.001
+    const direction = hasSignal
+      ? (pred.value > 0 ? 1 : -1)
+      : (seed > 0.5 ? 1 : -1)
+
+    // Corpo SEMPRE visível — mínimo de minBody
+    const bodyPct   = hasSignal ? Math.abs(pred.value) / 100 : 0
+    const bodyValue = Math.max(price * bodyPct, minBody)
+
+    const open  = price
+    const close = price + direction * bodyValue
+
+    // Pavios proporcionais ao corpo + volatilidade base
+    const wickHigh = baseVol * (0.4 + seed * 0.4)       + bodyValue * 0.5
+    const wickLow  = baseVol * (0.3 + (1 - seed) * 0.4) + bodyValue * 0.3
+
     return {
-      time: bucketBase + pred.time,
-      open: price,
-      high: Math.max(price, predictedClose) + wickHigh,
-      low:  Math.min(price, predictedClose) - wickLow,
-      close: predictedClose,
+      time:  bucketBase + pred.time,
+      open,
+      high:  Math.max(open, close) + wickHigh,
+      low:   Math.min(open, close) - wickLow,
+      close,
     }
   })
 }
 
 function gerarLinhaFutura(
   price: number,
-  bucketBase: number,
+  bucketBase: number, // agora recebe já o próximo bucket
   preds: { time: number; value: number }[]
 ): { time: UTCTimestamp; value: number }[] {
   return [
-    { time: safeTime(bucketBase), value: price },
-    ...preds.map(p => ({ time: safeTime(bucketBase + p.time), value: price * (1 + p.value / 100) })),
+    { time: safeTime(bucketBase), value: price }, // âncora no início do próximo bucket
+    ...preds.map(p => ({
+      time: safeTime(bucketBase + p.time),
+      value: price * (1 + p.value / 100)
+    })),
   ]
 }
 
@@ -166,19 +186,40 @@ export function TradingChart({
     label: string; price: number; change: number; time: string
   }>({ x: 0, y: 0, visible: false, label: "", price: 0, change: 0, time: "" })
 
-  const predictions = useMemo(() => [
-  { time: 5,     value: prediction5s     ?? prediction },
-  { time: 15,    value: prediction15s    ?? prediction },
-  { time: 30,    value: prediction30s    ?? prediction },
-  { time: 60,    value: prediction60s    ?? prediction },
-  { time: 300,   value: prediction300s   ?? prediction },
-  { time: 900,   value: prediction900s   ?? prediction },
-  { time: 1800,  value: prediction1800s  ?? prediction },
-  { time: 3600,  value: prediction3600s  ?? prediction },
-  { time: 18000, value: prediction18000s ?? prediction },
-  { time: 86400, value: prediction86400s ?? prediction },
-], [prediction, prediction5s, prediction15s, prediction30s, prediction60s,
-    prediction300s, prediction900s, prediction1800s, prediction3600s, prediction18000s, prediction86400s])
+ // ⭐ ESTABILIZAR predictions - só atualiza quando valores REALMENTE mudam
+const predictionsRef = useRef<Array<{time: number, value: number}>>([])
+
+const stablePredictions = useMemo(() => {
+  const prev = predictionsRef.current
+  const next = [
+    { time: 5,     value: prediction5s     ?? prediction },
+    { time: 15,    value: prediction15s    ?? prediction },
+    { time: 30,    value: prediction30s    ?? prediction },
+    { time: 60,    value: prediction60s    ?? prediction },
+    { time: 300,   value: prediction300s   ?? prediction },
+    { time: 900,   value: prediction900s   ?? prediction },
+    { time: 1800,  value: prediction1800s  ?? prediction },
+    { time: 3600,  value: prediction3600s  ?? prediction },
+    { time: 18000, value: prediction18000s ?? prediction },
+    { time: 86400, value: prediction86400s ?? prediction },
+  ]
+  
+  // Só troca a referência se algum valor REALMENTE mudou
+  if (prev.length === 0) {
+    predictionsRef.current = next
+    return next
+  }
+  
+  const changed = next.some((n, i) => 
+    !prev[i] || Math.abs(n.value - prev[i].value) > 0.0001
+  )
+  
+  if (!changed) return prev
+  predictionsRef.current = next
+  return next
+}, [prediction, prediction5s, prediction15s, prediction30s, prediction60s,
+    prediction300s, prediction900s, prediction1800s, prediction3600s,
+    prediction18000s, prediction86400s])
 
   const atr = useMemo(() => {
     const w = candles.slice(-14)
@@ -549,70 +590,62 @@ useEffect(() => {
 
 
 // ── Dados das séries futuras (VERSÃO ÚNICA E CORRIGIDA) ────────────────
-  // ── Dados das séries futuras (VERSÃO ÚNICA E CORRIGIDA) ────────────────
   useEffect(() => {
-    if (!chartRef.current || predictions.length === 0) return;
+  if (!chartRef.current || stablePredictions.length === 0) return
 
-    const price = targetPriceRef.current;
-    const nowS = Math.floor(Date.now() / 1000);
-    const bucketBase = nowS - (nowS % timeframe);
-    const labels = ["5s", "15s", "30s", "60s", "5m", "15m", "30m", "1h", "5h", "1d"];
+  const price      = targetPriceRef.current
+  const nowS       = Math.floor(Date.now() / 1000)
+  const bucketBase = nowS - (nowS % timeframe)
+  const labels     = ["5s", "15s", "30s", "60s", "5m", "15m", "30m", "1h", "5h", "1d"]
 
-    futureCandleTimesRef.current.clear();
+  // Captura o range visível ANTES de mexer nos dados
+  const visibleRange = chartRef.current.timeScale().getVisibleRange()
 
-    if (chartType === "candlestick" && futureCandlesRef.current) {
-      const velas = gerarVelasFuturas(price, bucketBase, predictions, atr);
-      if (!velas.length) return;
+  futureCandleTimesRef.current.clear()
 
-      velas.forEach((c, i) =>
-        futureCandleTimesRef.current.set(safeTime(c.time), {
-          label: `Previsão ${labels[i] ?? `${predictions[i]?.time}s`}`,
-          price: c.close,
-          change: ((c.close - price) / price) * 100,
-        })
-      );
+  if (chartType === "candlestick" && futureCandlesRef.current) {
+    const velas = gerarVelasFuturas(price, bucketBase, stablePredictions, atr)
+    if (!velas.length) return
 
-      const dataPoints = velas.map(c => ({
-        time: safeTime(c.time),
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-      }));
+    velas.forEach((c, i) =>
+      futureCandleTimesRef.current.set(safeTime(c.time), {
+        label:  `Previsão ${labels[i] ?? `${stablePredictions[i]?.time}s`}`,
+        price:  c.close,
+        change: ((c.close - price) / price) * 100,
+      })
+    )
 
-      if (isFirstFutureDataRef.current) {
-        futureCandlesRef.current.setData(dataPoints);
-        isFirstFutureDataRef.current = false;
-      } else {
-        futureCandlesRef.current.setData([]);
-        futureCandlesRef.current.setData(dataPoints);
-      }
+    futureCandlesRef.current.setData(velas.map(c => ({
+      time:  safeTime(c.time),
+      open:  c.open, high: c.high, low: c.low, close: c.close,
+    })))
 
-    } else if (chartType !== "candlestick" && futureLineRef.current) {
-      const pts = gerarLinhaFutura(price, bucketBase, predictions);
-      const isPos = predictions.some(p => p.value > 0);
-      futureLineRef.current.applyOptions({
-        color: isPos ? "rgba(0,230,118,0.7)" : "rgba(255,61,87,0.7)",
-        crosshairMarkerBorderColor: isPos ? "#00e676" : "#ff3d57",
-      });
+  } else if (chartType !== "candlestick" && futureLineRef.current) {
+    const pts   = gerarLinhaFutura(price, bucketBase, stablePredictions)
+    const isPos = stablePredictions.some(p => p.value > 0)
+    futureLineRef.current.applyOptions({
+      color: isPos ? "rgba(0,230,118,0.7)" : "rgba(255,61,87,0.7)",
+      crosshairMarkerBorderColor: isPos ? "#00e676" : "#ff3d57",
+    })
+    futureLineRef.current.setData(pts)
 
-      if (isFirstFutureDataRef.current) {
-        futureLineRef.current.setData(pts);
-        isFirstFutureDataRef.current = false;
-      } else {
-        futureLineRef.current.setData([]);
-        futureLineRef.current.setData(pts);
-      }
+    stablePredictions.forEach((pred, i) => {
+      futureCandleTimesRef.current.set(safeTime(bucketBase + pred.time), {
+        label:  `Previsão ${labels[i] ?? `${pred.time}s`}`,
+        price:  price * (1 + pred.value / 100),
+        change: pred.value,
+      })
+    })
+  }
 
-      predictions.forEach((pred, i) => {
-        futureCandleTimesRef.current.set(safeTime(bucketBase + pred.time), {
-          label: `Previsão ${labels[i] ?? `${pred.time}s`}`,
-          price: price * (1 + pred.value / 100),
-          change: pred.value,
-        });
-      });
-    }
-  }, [predictions, atr, timeframe, chartType]);
+  // Restaura o range visível após o setData — evita o scroll automático
+  if (visibleRange) {
+    requestAnimationFrame(() => {
+      chartRef.current?.timeScale().setVisibleRange(visibleRange)
+    })
+  }
+
+}, [stablePredictions, atr, timeframe, chartType])
 // Reset a flag quando o chart for recriado
 useEffect(() => {
   isFirstFutureDataRef.current = true;
@@ -722,7 +755,7 @@ useEffect(() => {
               fontFamily: "'JetBrains Mono', monospace", minWidth: 160,
             }}>
             <div className="font-bold mb-1" style={{ color: futureTooltip.change >= 0 ? "#00e676" : "#ff3d57" }}>
-              🔮 {futureTooltip.label}
+              {futureTooltip.label}
             </div>
             <div>
               <span style={{ color: "#4a6a8a" }}>Preço: </span>
@@ -737,7 +770,7 @@ useEffect(() => {
               </span>
             </div>
             <div style={{ color: "#3a5a7a", fontSize: 9, marginTop: 4 }}>
-              🕐 {futureTooltip.time} (Brasília)
+              {futureTooltip.time} (Brasília)
             </div>
           </div>
         )}

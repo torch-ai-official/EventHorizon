@@ -1,4 +1,23 @@
 # Software/core/mind_pytorch.py
+#
+# MUDANÇAS v3 (vs v2_bugfix):
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. DelayedRewardBuffer  — a rede só recebe a recompensa de um horizonte
+#    quando o tempo real passa (ex: recompensa de 5 min chega 5 min depois).
+#    Isso elimina o problema de treinar com dados do passado como se fossem
+#    dados do futuro.
+#
+# 2. aprender_horizonte(i, recompensa)  — treina só a cabeça relevante com
+#    a recompensa real do horizonte i.  Gradiente focado, sem ruído cruzado.
+#
+# 3. Remoção do warmup manual dentro do aprender()  — o scheduler já cuida
+#    disso corretamente com LinearLR + CosineAnnealingLR encadeados.
+#
+# 4. n_acertos / n_erros agora são atualizados APENAS pelo buffer real,
+#    nunca pela comparação instantânea pred vs recompensa estimada.
+#
+# 5. snapshot() expandido para incluir métricas por tipo de horizonte.
+# ─────────────────────────────────────────────────────────────────────────────
 
 import torch
 import torch.nn as nn
@@ -9,19 +28,122 @@ from collections import deque
 
 # 10 HORIZONTES - do micro-scalping ao swing trade
 HORIZONTES = [
-    5,      # 5 segundos (micro-scalping)
+    5,      # 5 segundos  (micro-scalping)
     15,     # 15 segundos
     30,     # 30 segundos
     60,     # 1 minuto
-    300,    # 5 minutos (scalping)
-    900,    # 15 minutos (intraday)
+    300,    # 5 minutos   (scalping)
+    900,    # 15 minutos  (intraday)
     1800,   # 30 minutos
-    3600,   # 1 hora (swing curto)
-    18000,  # 5 horas (swing médio)
-    86400,  # 1 dia (position trade)
+    3600,   # 1 hora      (swing curto)
+    18000,  # 5 horas     (swing médio)
+    86400,  # 1 dia       (position trade)
 ]
 N_HORIZONTES = len(HORIZONTES)
 
+
+# =============================================================================
+# DELAYED REWARD BUFFER
+# =============================================================================
+
+class DelayedRewardBuffer:
+    """
+    Armazena snapshots (timestamp, pred_i, preco) e, quando o horizonte i
+    transcorreu, calcula o retorno REAL e devolve para treinamento.
+
+    Uso:
+        buf = DelayedRewardBuffer(HORIZONTES, timeframe_s=5)
+        buf.registrar(time.time(), preds_lista, preco_atual)
+        recompensas = buf.coletar_maduras(time.time(), preco_atual)
+        # recompensas: list[(i, recompensa_float)] prontas para aprender
+    """
+
+    def __init__(self, horizontes: list[int], timeframe_s: int = 5):
+        self.horizontes = horizontes
+        self.timeframe_s = timeframe_s
+        # Cada entrada: {'ts': float, 'preds': list[float], 'preco': float, 'verificado': set}
+        self._buffer: deque = deque(maxlen=10_000)
+
+    def registrar(self, ts: float, preds: list[float], preco: float):
+        self._buffer.append({
+            'ts': ts,
+            'preds': list(preds),
+            'preco': preco,
+            'verificado': set(),
+        })
+
+    def coletar_maduras(self, ts_agora: float, preco_agora: float) -> list[tuple[int, float]]:
+        """
+        Percorre o buffer e retorna pares (horizonte_idx, recompensa) para
+        cada entrada cujo tempo de espera já transcorreu.
+
+        A recompensa é o retorno percentual normalizado por horizonte.
+        """
+        resultados: list[tuple[int, float]] = []
+        tolerancia = max(self.timeframe_s * 3, 15)  # tolerância razoável
+
+        for entrada in self._buffer:
+            elapsed = ts_agora - entrada['ts']
+            for i, h in enumerate(self.horizontes):
+                if i in entrada['verificado']:
+                    continue
+                if elapsed >= h - tolerancia:
+                    # Procura o preço mais próximo do momento alvo no buffer
+                    ts_alvo = entrada['ts'] + h
+                    preco_alvo = self._buscar_preco_proximo(ts_alvo, ts_agora, preco_agora)
+                    if preco_alvo is None:
+                        continue
+
+                    retorno_pct = (preco_alvo - entrada['preco']) / (entrada['preco'] + 1e-9) * 100
+
+                    # Normalização por horizonte: horizontes mais longos têm
+                    # movimentos maiores — normalizamos para mesma escala
+                    if h <= 60:
+                        clamp = 3.0
+                    elif h <= 3600:
+                        clamp = 2.0
+                    else:
+                        clamp = 1.0
+
+                    recompensa = max(-clamp, min(clamp, retorno_pct)) / clamp
+
+                    resultados.append((i, recompensa))
+                    entrada['verificado'].add(i)
+
+        # Limpa entradas totalmente verificadas ou muito antigas (> 2 dias)
+        limite_idade = 86400 * 2
+        self._buffer = deque(
+            (e for e in self._buffer
+             if len(e['verificado']) < N_HORIZONTES and (ts_agora - e['ts']) < limite_idade),
+            maxlen=10_000
+        )
+        return resultados
+
+    def _buscar_preco_proximo(self, ts_alvo: float, ts_agora: float,
+                               preco_agora: float) -> float | None:
+        """
+        Procura no buffer o preço mais próximo do timestamp alvo.
+        Se o alvo ainda não chegou, retorna None.
+        Se o alvo passou, usa o preço mais próximo disponível.
+        """
+        if ts_alvo > ts_agora + 5:
+            return None  # Horizonte ainda não chegou
+
+        melhor = None
+        melhor_dist = float('inf')
+        for entrada in self._buffer:
+            dist = abs(entrada['ts'] - ts_alvo)
+            if dist < melhor_dist:
+                melhor_dist = dist
+                melhor = entrada['preco']
+
+        # Tolerância: aceita até 10% do horizonte de distância
+        return melhor if melhor_dist < max(30, ts_agora - ts_alvo + 60) else preco_agora
+
+
+# =============================================================================
+# BLOCOS DA REDE
+# =============================================================================
 
 class AtencaoMultiCabeca(nn.Module):
     def __init__(self, dim, num_cabecas=4):
@@ -71,6 +193,10 @@ class BlocoTransformer(nn.Module):
         return x
 
 
+# =============================================================================
+# MENTE TORCH
+# =============================================================================
+
 class MenteTorch(nn.Module):
 
     def __init__(self, id_agente: int, n_entradas: int = 14):
@@ -78,7 +204,7 @@ class MenteTorch(nn.Module):
         self.id_agente = id_agente
         self.n_entradas = n_entradas
 
-        # Embedding inicial
+        # ── Embedding inicial ──────────────────────────────────────────────
         self.embedding = nn.Sequential(
             nn.Linear(n_entradas, 128),
             nn.LayerNorm(128),
@@ -89,13 +215,13 @@ class MenteTorch(nn.Module):
             nn.GELU(),
         )
 
-        # Transformer para padrões de curto prazo
+        # ── Transformer (curto prazo) ─────────────────────────────────────
         self.transformer = nn.ModuleList([
             BlocoTransformer(256, num_cabecas=8, dropout=0.1)
             for _ in range(6)
         ])
 
-        # LSTM para memória de longo prazo (bidirecional)
+        # ── LSTM (longo prazo, bidirecional) ─────────────────────────────
         self.lstm = nn.LSTM(
             input_size=256,
             hidden_size=128,
@@ -105,13 +231,12 @@ class MenteTorch(nn.Module):
             bidirectional=True
         )
         self.lstm_hidden = None
-
         self.memoria_longa = deque(maxlen=200)
 
         # Projeção do LSTM (256 porque bidirecional: 128*2)
         self.proj_lstm = nn.Linear(256, 256)
 
-        # Atenção cross-scale (curto prazo <-> longo prazo)
+        # ── Cross-attention ───────────────────────────────────────────────
         self.cross_attention = nn.MultiheadAttention(
             embed_dim=256,
             num_heads=4,
@@ -122,25 +247,17 @@ class MenteTorch(nn.Module):
         self.residual_1 = nn.Linear(256, 256)
         self.residual_2 = nn.Linear(256, 128)
 
-        # Cabeças com complexidade progressiva por horizonte
+        # ── Cabeças por horizonte ─────────────────────────────────────────
         self.cabecas = nn.ModuleList()
-
-        # Micro-scalping (5s-60s): redes leves
-        for _ in range(4):
+        for _ in range(4):                  # micro  (5s–60s)
             self.cabecas.append(self._criar_cabeca('micro'))
-
-        # Scalping/Intraday (5m-30m): redes médias
-        for _ in range(3):
+        for _ in range(3):                  # intraday (5m–30m)
             self.cabecas.append(self._criar_cabeca('intraday'))
-
-        # Swing trade (1h-5h): redes mais profundas
-        for _ in range(2):
+        for _ in range(2):                  # swing  (1h–5h)
             self.cabecas.append(self._criar_cabeca('swing'))
+        self.cabecas.append(self._criar_cabeca('position'))  # 1d
 
-        # Position trade (1d): rede profunda com mais dropout
-        self.cabecas.append(self._criar_cabeca('position'))
-
-        # Cabeça de tendência global
+        # ── Cabeças auxiliares ────────────────────────────────────────────
         self.cabeca_tendencia = nn.Sequential(
             nn.Linear(256 + N_HORIZONTES, 128),
             nn.LayerNorm(128),
@@ -151,7 +268,6 @@ class MenteTorch(nn.Module):
             nn.Linear(64, 3),
             nn.Softmax(dim=1)
         )
-
         self.cabeca_confianca = nn.Sequential(
             nn.Linear(256, 64),
             nn.ReLU(),
@@ -161,7 +277,6 @@ class MenteTorch(nn.Module):
             nn.Linear(32, 1),
             nn.Sigmoid()
         )
-
         self.cabeca_volatilidade = nn.Sequential(
             nn.Linear(256, 64),
             nn.ReLU(),
@@ -171,52 +286,62 @@ class MenteTorch(nn.Module):
             nn.Linear(32, 1),
             nn.Softplus()
         )
-
-        # Cabeça de regime de mercado
         self.cabeca_regime = nn.Sequential(
             nn.Linear(256, 32),
             nn.ReLU(),
-            nn.Linear(32, 4),  # trend_up, trend_down, ranging, volatile
+            nn.Linear(32, 4),
             nn.Softmax(dim=1)
         )
 
-        self.otimizador = torch.optim.AdamW(
-            self.parameters(),
-            lr=0.001,
-            betas=(0.9, 0.999),
-            weight_decay=0.01,
-            amsgrad=True
-        )
-        self.warmup_steps = 200
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            self.otimizador,
-            T_max=500,
-            eta_min=1e-5
-        )
-
-        self.n_acertos = [0] * N_HORIZONTES
-        self.n_erros = [0] * N_HORIZONTES
-        self.geracao = 0
-
-        self.memoria_erros = deque(maxlen=50)
-        self.memoria_loss = deque(maxlen=100)
-        self.memoria_gradientes = deque(maxlen=20)
-
-        self.ultima_entrada = None
-        self.ultimo_estado_oculto = None
-        self.estado_interno = torch.zeros(1, 256)
+        # ── Embeddings de horizonte (aprendíveis) ─────────────────────────
         self.horizon_embeddings = nn.ParameterList([
             nn.Parameter(torch.randn(1, 32) * 0.02)
             for _ in range(N_HORIZONTES)
         ])
-
         self.proj_embed = nn.Linear(256 + 32, 256)
 
-        self._ultimos_x_cabecas = None
+        # ── Otimizador com scheduler encadeado ───────────────────────────
+        # LinearLR faz warmup nos primeiros 200 steps;
+        # depois CosineAnnealingLR decai suavemente.
+        self.otimizador = torch.optim.AdamW(
+            self.parameters(),
+            lr=1e-3,
+            betas=(0.9, 0.999),
+            weight_decay=0.01,
+            amsgrad=True
+        )
+        self._scheduler_warmup = torch.optim.lr_scheduler.LinearLR(
+            self.otimizador,
+            start_factor=0.1,
+            end_factor=1.0,
+            total_iters=200
+        )
+        self._scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+            self.otimizador,
+            T_max=2000,
+            eta_min=5e-5
+        )
+        self._scheduler = torch.optim.lr_scheduler.SequentialLR(
+            self.otimizador,
+            schedulers=[self._scheduler_warmup, self._scheduler_cosine],
+            milestones=[200]
+        )
 
-        print(f"[PyTorch] Mente {id_agente} carregada")
-        print(f"[PyTorch]    Horizontes: {N_HORIZONTES} | Transformer: 6 camadas | LSTM: bidirecional")
-        print(f"[PyTorch]    Cabeças: micro(4) + intraday(3) + swing(2) + position(1)")
+        # ── Métricas ──────────────────────────────────────────────────────
+        # n_acertos[i] / n_erros[i] SÓ são atualizados pelo delayed buffer
+        self.n_acertos = [0] * N_HORIZONTES
+        self.n_erros   = [0] * N_HORIZONTES
+        self.geracao   = 0
+
+        self.memoria_erros     = deque(maxlen=50)
+        self.memoria_loss      = deque(maxlen=100)
+        self.memoria_gradientes = deque(maxlen=20)
+
+        # ── Estado interno ────────────────────────────────────────────────
+        self.ultima_entrada     = None
+        self.ultimo_estado_oculto = None
+        self.estado_interno     = torch.zeros(1, 256)
+        self._ultimos_x_cabecas = None
 
     # ─────────────────────────────────────────────────────────────────────────
     # PROPRIEDADES
@@ -261,18 +386,22 @@ class MenteTorch(nn.Module):
         return sum(self.memoria_loss) / len(self.memoria_loss)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # SNAPSHOT (para comparar antes/depois do treinamento)
+    # SNAPSHOT
     # ─────────────────────────────────────────────────────────────────────────
 
     def snapshot(self) -> dict:
-        """Retorna métricas atuais para comparação antes/depois."""
+        accs = self.accuracy_por_horizonte
         return {
-            "geracao": self.geracao,
-            "accuracy_por_horizonte": self.accuracy_por_horizonte,
-            "accuracy_media": round(self.accuracy, 4),
-            "loss_medio": round(self.loss_medio, 6),
-            "confidence": round(self.confidence, 4),
-            "learning_stability": self.learning_stability,
+            "geracao":              self.geracao,
+            "accuracy_por_horizonte": accs,
+            "accuracy_micro":       round(sum(accs[:4]) / 4, 4) if len(accs) >= 4 else 0.5,
+            "accuracy_intraday":    round(sum(accs[4:7]) / 3, 4) if len(accs) >= 7 else 0.5,
+            "accuracy_swing":       round(sum(accs[7:9]) / 2, 4) if len(accs) >= 9 else 0.5,
+            "accuracy_position":    round(accs[9], 4) if len(accs) >= 10 else 0.5,
+            "accuracy_media":       round(self.accuracy, 4),
+            "loss_medio":           round(self.loss_medio, 6),
+            "confidence":           round(self.confidence, 4),
+            "learning_stability":   self.learning_stability,
         }
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -325,15 +454,15 @@ class MenteTorch(nn.Module):
                 nn.Linear(256, 128),
                 nn.LayerNorm(128),
                 nn.GELU(),
-                nn.Dropout(0.25),
+                nn.Dropout(0.2),
                 nn.Linear(128, 64),
                 nn.LayerNorm(64),
                 nn.GELU(),
-                nn.Dropout(0.25),
+                nn.Dropout(0.2),
                 nn.Linear(64, 32),
                 nn.LayerNorm(32),
                 nn.GELU(),
-                nn.Dropout(0.25),
+                nn.Dropout(0.2),
                 nn.Linear(32, 16),
                 nn.GELU(),
                 nn.Linear(16, 1),
@@ -350,7 +479,7 @@ class MenteTorch(nn.Module):
 
         tensor = torch.tensor(entrada[:self.n_entradas], dtype=torch.float32)
 
-        # Sequência de curto prazo (transformer)
+        # ── Sequência curto prazo ─────────────────────────────────────────
         if self.ultimo_estado_oculto is None:
             sequencia = tensor.unsqueeze(0).unsqueeze(0)
             self.ultimo_estado_oculto = tensor.clone()
@@ -362,13 +491,13 @@ class MenteTorch(nn.Module):
                 sequencia = sequencia[:, -10:, :]
             self.ultimo_estado_oculto = tensor.clone()
 
-        # Embedding + Transformer (curto prazo)
+        # ── Embedding + Transformer ───────────────────────────────────────
         x_curto = self.embedding(sequencia)
         for bloco in self.transformer:
             x_curto = bloco(x_curto)
         x_curto = x_curto.mean(dim=1)  # [1, 256]
 
-        # LSTM para longo prazo
+        # ── LSTM (memória longa) ──────────────────────────────────────────
         self.memoria_longa.append(x_curto.detach().squeeze(0))
 
         if len(self.memoria_longa) >= 10:
@@ -379,29 +508,26 @@ class MenteTorch(nn.Module):
                 lstm_out, self.lstm_hidden = self.lstm(seq_longa)
             else:
                 h, c = self.lstm_hidden
-                h = h.detach()
-                c = c.detach()
-                lstm_out, self.lstm_hidden = self.lstm(seq_longa, (h, c))
+                lstm_out, self.lstm_hidden = self.lstm(seq_longa, (h.detach(), c.detach()))
 
             x_longo = self.proj_lstm(lstm_out[:, -1, :])
         else:
             x_longo = x_curto
 
-        # Cross-attention
-        x_curto_3d = x_curto.unsqueeze(1) if x_curto.dim() == 2 else x_curto
-        x_longo_3d = x_longo.unsqueeze(1) if x_longo.dim() == 2 else x_longo
-
+        # ── Cross-attention ───────────────────────────────────────────────
+        x_curto_3d = x_curto.unsqueeze(1)
+        x_longo_3d = x_longo.unsqueeze(1)
         x_cross, _ = self.cross_attention(x_curto_3d, x_longo_3d, x_longo_3d)
         x_cross = x_cross.squeeze(1)
 
-        # Combina tudo
+        # ── Combinação ────────────────────────────────────────────────────
         x_combinado = x_curto + x_longo * 0.3 + x_cross * 0.2
         x_combinado = x_combinado + self.residual_1(x_combinado) * 0.3
 
         self.estado_interno = 0.9 * self.estado_interno + 0.1 * x_combinado.detach()
         self.ultima_entrada = x_combinado.clone()
 
-        # Cada horizonte usa combinação diferente + embedding único
+        # ── Cabeças por horizonte ─────────────────────────────────────────
         saidas = []
         xs_cabecas = []
         for i, cab in enumerate(self.cabecas):
@@ -417,16 +543,12 @@ class MenteTorch(nn.Module):
                     x = x_base + x_longo * 0.3
             elif i < 9:
                 x_base = x_longo * 0.6 + x_cross * 0.3 + x_curto * 0.1
-                if i == 7:
-                    x = x_base + x_curto * 0.1
-                else:
-                    x = x_base + x_longo * 0.2
+                x = x_base + (x_curto if i == 7 else x_longo) * 0.1
             else:
                 x = x_longo * 0.8 + x_cross * 0.2
 
             emb = self.horizon_embeddings[i] * 3.0
-            x = torch.cat([x, emb], dim=1)   # [1, 256+32]
-            x = self.proj_embed(x)            # [1, 256]
+            x = self.proj_embed(torch.cat([x, emb], dim=1))
             x = x + self.residual_1(x) * 0.3
 
             xs_cabecas.append(x.detach())
@@ -436,118 +558,136 @@ class MenteTorch(nn.Module):
         return saidas
 
     # ─────────────────────────────────────────────────────────────────────────
-    # APRENDER
+    # APRENDER (batch completo — todos os 10 horizontes de uma vez)
     # ─────────────────────────────────────────────────────────────────────────
 
-    def aprender(self, recompensas):
-        if self.ultima_entrada is None:
+    def aprender(self, recompensas: list[float]):
+        """
+        Treina todas as cabeças de uma vez com recompensas reais.
+        Só deve ser chamado pelo crypto.py APÓS o delayed buffer confirmar
+        os retornos reais.  Para treinamento parcial (horizonte único),
+        use aprender_horizonte().
+        """
+        if self.ultima_entrada is None or self._ultimos_x_cabecas is None:
             return
 
         if isinstance(recompensas, (int, float)):
             recompensas = [float(recompensas)] * N_HORIZONTES
         elif isinstance(recompensas, torch.Tensor):
-            if recompensas.numel() == 0:
-                return
             recompensas = recompensas.detach().flatten().tolist()
         elif not isinstance(recompensas, list):
             return
 
         if len(recompensas) != N_HORIZONTES:
-            if len(recompensas) == 1:
-                recompensas = [recompensas[0]] * N_HORIZONTES
-            else:
-                return
+            return
 
         if any(math.isnan(r) or math.isinf(r) for r in recompensas):
             return
 
+        self._passo_gradiente(recompensas, list(range(N_HORIZONTES)))
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # APRENDER HORIZONTE (treinamento parcial — só a cabeça i)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def aprender_horizonte(self, i: int, recompensa: float):
+        """
+        Recebe a recompensa REAL de um único horizonte (quando o tempo passou)
+        e treina apenas a cabeça correspondente.
+
+        Atualiza n_acertos / n_erros com o dado real.
+        """
+        if self.ultima_entrada is None or self._ultimos_x_cabecas is None:
+            return
+        if math.isnan(recompensa) or math.isinf(recompensa):
+            return
+        if not (0 <= i < N_HORIZONTES):
+            return
+
+        self._passo_gradiente([recompensa], [i])
+
+        # Atualiza métricas com sinal real
+        x_i = self._ultimos_x_cabecas[i]
+        with torch.no_grad():
+            pred = float(self.cabecas[i](x_i).item())
+        if (pred > 0) == (recompensa > 0):
+            self.n_acertos[i] += 1
+        else:
+            self.n_erros[i] += 1
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # PASSO DE GRADIENTE INTERNO
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _passo_gradiente(self, recompensas: list[float], indices: list[int]):
+        """
+        Executa um passo de otimização nas cabeças indicadas por `indices`.
+        `recompensas` deve ter o mesmo comprimento que `indices`.
+        """
         self.otimizador.zero_grad()
 
         x = self.ultima_entrada
-        if self._ultimos_x_cabecas is None:
-            return
-
-        preds = torch.cat([cab(x_i) for cab, x_i in zip(self.cabecas, self._ultimos_x_cabecas)], dim=1)
-        confianca = self.cabeca_confianca(x)
-        volatilidade = self.cabeca_volatilidade(x)
-
-        alvo = torch.tensor([recompensas], dtype=torch.float32)
+        preds_lista = [self.cabecas[i](self._ultimos_x_cabecas[i]) for i in indices]
+        preds = torch.cat(preds_lista, dim=1)                        # [1, n]
+        alvo  = torch.tensor([recompensas], dtype=torch.float32)     # [1, n]
 
         if preds.shape != alvo.shape:
             return
 
-        loss_mse = F.mse_loss(preds, alvo)
-        loss_mae = F.l1_loss(preds, alvo)
         loss_huber = F.smooth_l1_loss(preds, alvo)
+        loss_mse   = F.mse_loss(preds, alvo)
+        loss_mae   = F.l1_loss(preds, alvo)
 
-        erro_absoluto = torch.abs(preds - alvo).mean()
-        target_confianca = torch.sigmoid(1 - erro_absoluto).view_as(confianca)
-        loss_confianca = F.binary_cross_entropy(confianca, target_confianca)
+        erro_abs = torch.abs(preds - alvo).mean()
+        confianca = self.cabeca_confianca(x)
+        target_conf = torch.sigmoid(1 - erro_abs).view_as(confianca)
+        loss_conf = F.binary_cross_entropy(confianca, target_conf)
 
-        loss_volatilidade = volatilidade.mean()
-
-        if N_HORIZONTES > 1:
-            loss_consistencia = torch.mean((preds[:, 1:] - preds[:, :-1]) ** 2)
-
-            pesos_temporais = torch.tensor(
-                [0.1, 0.2, 0.3, 0.4, 0.6, 0.7, 0.8, 0.9, 1.0], dtype=torch.float32
-            )
-            preds_ponderadas = preds[:, :-1] * pesos_temporais.unsqueeze(0)
-            loss_estrutura = torch.abs(preds_ponderadas.mean() - preds[:, -1]).mean() * 0.1
+        # Consistência temporal só faz sentido com múltiplas cabeças em sequência
+        if len(indices) > 1 and all(indices[j] + 1 == indices[j + 1] for j in range(len(indices) - 1)):
+            loss_consist = torch.mean((preds[:, 1:] - preds[:, :-1]) ** 2)
         else:
-            loss_consistencia = torch.tensor(0.0)
-            loss_estrutura = torch.tensor(0.0)
+            loss_consist = torch.tensor(0.0)
 
-        # FIX: usa list() para iterar sobre os parâmetros corretamente
+        loss_vol = self.cabeca_volatilidade(x).mean()
+
+        # Regularização L2 só nas cabeças envolvidas
         loss_reg = sum(
-            torch.sum(p ** 2) for cab in list(self.cabecas)[-3:] for p in cab.parameters()
+            torch.sum(p ** 2)
+            for i in indices[-3:]
+            for p in self.cabecas[i].parameters()
         ) * 1e-5
 
-        loss = (loss_huber * 0.4 +
-                loss_mse * 0.15 +
-                loss_mae * 0.1 +
-                loss_confianca * 0.1 +
-                loss_consistencia * 0.1 +
-                loss_estrutura * 0.05 +
-                loss_volatilidade * 0.05 +
-                loss_reg * 0.05)
+        loss = (loss_huber  * 0.45 +
+                loss_mse    * 0.15 +
+                loss_mae    * 0.10 +
+                loss_conf   * 0.10 +
+                loss_consist * 0.10 +
+                loss_vol    * 0.05 +
+                loss_reg    * 0.05)
 
         loss.backward()
 
+           # ✅ Verifica e corrige gradientes NaN
+        for param in self.parameters():
+            if param.grad is not None:
+                param.grad = torch.nan_to_num(param.grad, nan=0.0, posinf=1.0, neginf=-1.0)
+
         grad_norm = torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=0.3)
+
+        if math.isnan(grad_norm.item()):
+            print("[PyTorch] ⚠️ Gradiente NaN detectado! Pulando passo.")
+            self.otimizador.zero_grad()
+            return
+
+
         self.memoria_gradientes.append(grad_norm.item())
 
         self.otimizador.step()
-
-        if self.geracao < self.warmup_steps:
-            lr = 1e-4 + (1e-3 - 1e-4) * (self.geracao / self.warmup_steps)
-            for pg in self.otimizador.param_groups:
-                pg['lr'] = lr
-        else:
-            self.scheduler.step()
+        self._scheduler.step()
 
         self.memoria_loss.append(loss.item())
-        self.memoria_erros.append(erro_absoluto.item())
-
-        with torch.no_grad():
-            preds_np = preds[0].detach().tolist()
-            conf = confianca.item()
-
-            for i, (pred, real) in enumerate(zip(preds_np, recompensas)):
-                if i < 4:
-                    peso_base = min(1.0, max(0.1, conf * 2))
-                elif i < 7:
-                    peso_base = min(1.0, max(0.1, conf * 1.5))
-                elif i < 9:
-                    peso_base = min(1.0, max(0.1, conf * 1.2))
-                else:
-                    peso_base = min(1.0, max(0.1, conf * 1.0))
-
-                if (pred > 0) == (real > 0):
-                    self.n_acertos[i] += peso_base
-                else:
-                    self.n_erros[i] += (1 - peso_base * 0.5)
-
+        self.memoria_erros.append(erro_abs.item())
         self.geracao += 1
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -557,16 +697,16 @@ class MenteTorch(nn.Module):
     def salvar_com_nome(self, caminho_completo: str):
         os.makedirs(os.path.dirname(caminho_completo), exist_ok=True)
         torch.save({
-            'model_state_dict': self.state_dict(),
+            'model_state_dict':     self.state_dict(),
             'optimizer_state_dict': self.otimizador.state_dict(),
-            'scheduler_state_dict': self.scheduler.state_dict(),
-            'n_acertos': self.n_acertos,
-            'n_erros': self.n_erros,
-            'geracao': self.geracao,
-            'historico_loss': list(self.memoria_loss),
-            'memoria_erros': list(self.memoria_erros),
-            'estado_interno': self.estado_interno,
-            'versao': 'v2_bugfix'
+            'scheduler_state_dict': self._scheduler.state_dict(),
+            'n_acertos':            self.n_acertos,
+            'n_erros':              self.n_erros,
+            'geracao':              self.geracao,
+            'historico_loss':       list(self.memoria_loss),
+            'memoria_erros':        list(self.memoria_erros),
+            'estado_interno':       self.estado_interno,
+            'versao':               'v3_delayed_reward'
         }, caminho_completo)
 
     def carregar(self, caminho: str = "data/mentes_pytorch") -> bool:
@@ -576,22 +716,17 @@ class MenteTorch(nn.Module):
                 ck = torch.load(arquivo, map_location='cpu')
                 self.load_state_dict(ck['model_state_dict'], strict=False)
                 self.otimizador.load_state_dict(ck['optimizer_state_dict'])
-
-                if 'scheduler_state_dict' in ck:
-                    try:
-                        self.scheduler.load_state_dict(ck['scheduler_state_dict'])
-                    except Exception:
-                        pass
-
-                self.n_acertos = ck.get('n_acertos', [0] * N_HORIZONTES)
-                self.n_erros = ck.get('n_erros', [0] * N_HORIZONTES)
-                self.geracao = ck.get('geracao', 0)
+                try:
+                    self.scheduler.load_state_dict(ck['scheduler_state_dict'])
+                except Exception:
+                    pass
+                self.n_acertos    = ck.get('n_acertos',    [0] * N_HORIZONTES)
+                self.n_erros      = ck.get('n_erros',      [0] * N_HORIZONTES)
+                self.geracao      = ck.get('geracao',      0)
                 self.memoria_loss = deque(ck.get('historico_loss', []), maxlen=100)
                 self.memoria_erros = deque(ck.get('memoria_erros', []), maxlen=50)
-
                 if 'estado_interno' in ck:
                     self.estado_interno = ck['estado_interno']
-
                 print(f"[PyTorch] Mente {self.id_agente} carregada (estabilidade: {self.learning_stability})")
                 return True
             except Exception as e:
@@ -600,12 +735,12 @@ class MenteTorch(nn.Module):
 
     def para_dict(self) -> dict:
         return {
-            "id_agente": self.id_agente,
-            "n_acertos": self.n_acertos,
-            "n_erros": self.n_erros,
-            "geracao": self.geracao,
+            "id_agente":            self.id_agente,
+            "n_acertos":            self.n_acertos,
+            "n_erros":              self.n_erros,
+            "geracao":              self.geracao,
             "accuracy_por_horizonte": self.accuracy_por_horizonte,
-            "confidence": self.confidence,
-            "learning_stability": self.learning_stability,
-            "tipo": "pytorch_v2_bugfix"
+            "confidence":           self.confidence,
+            "learning_stability":   self.learning_stability,
+            "tipo":                 "pytorch_v3_delayed_reward"
         }

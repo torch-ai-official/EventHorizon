@@ -10,8 +10,9 @@ import {
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { TradingChart } from "@/components/apps/TradingChart"
+import { API_BASE_URL } from '@/lib/api';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+const API_BASE = API_BASE_URL
 // ============================================
 // INTERFACES
 // ============================================
@@ -202,6 +203,42 @@ export function CryptoApp({
     tendencia: { ultima_hora: 0, direcao: "stable", variacao: 0 },
   })
 
+    // Junto com os outros useState:
+  const [signalResponse, setSignalResponse] = useState<string | null>(null)
+  const [signalLoading, setSignalLoading] = useState(false)
+
+  // Função que chama a IA para análise
+  // ⭐ Substitua a função handleSignalCommand por esta:
+
+// ⭐ Função que chama o chatbot do backend
+async function handleSignalCommand() {
+  if (!selected) return
+  
+  setSignalLoading(true)
+  setSignalResponse(null)
+  
+  try {
+    // ✅ CORRETO: Chama o endpoint /chatbot
+    const response = await fetch(`${API_BASE_URL}/chatbot`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        pergunta: `Faça uma análise completa de ${selected.symbol.replace("USDT", "")} agora. 
+        Considere: preço atual, previsões dos horizontes, consenso entre prazos, RSI, regime de mercado.
+        Com base nesses dados, qual a recomendação?`,
+        moeda: selected.symbol
+      })
+    })
+    const data = await response.json()
+    setSignalResponse(data.resposta || "Não foi possível gerar análise.")
+  } catch (error) {
+    console.error("Erro no chatbot:", error)
+    setSignalResponse("❌ Erro ao conectar com o assistente. Verifique se o servidor está rodando.")
+  } finally {
+    setSignalLoading(false)
+  }
+}
+
   // ============================================
   // DERIVED DATA
   // ── A prop `cryptos` já chega filtrada pelo pai (page.tsx).
@@ -234,7 +271,7 @@ async function sendChatMessage() {
   setChatLoading(true)
   
   try {
-    const response = await fetch(`${API_BASE}/chatbot`, {
+    const response = await fetch(`${API_BASE_URL}/chatbot`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ 
@@ -518,15 +555,13 @@ async function sendChatMessage() {
   // ============================================
 
   return (
-    <div className="space-y-6">
-
-      {/* Toast */}
+    <div className="space-y-4">
+      {/* Notificação */}
       {notification && (
-        <div className={cn(
-          "fixed bottom-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg animate-in slide-in-from-right text-sm",
+        <div className={cn("fixed bottom-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-sm",
           notification.type === "success" && "bg-green-500/20 border border-green-500/30 text-green-400",
-          notification.type === "error"   && "bg-red-500/20   border border-red-500/30   text-red-400",
-          notification.type === "info"    && "bg-blue-500/20  border border-blue-500/30  text-blue-400"
+          notification.type === "error" && "bg-red-500/20 border border-red-500/30 text-red-400",
+          notification.type === "info" && "bg-blue-500/20 border border-blue-500/30 text-blue-400"
         )}>
           {notification.message}
         </div>
@@ -534,284 +569,75 @@ async function sendChatMessage() {
 
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 flex items-center justify-center">
-            <span className="text-white text-sm font-bold">AI</span>
-          </div>
-          <div>
-            <h2 className="text-lg font-bold text-foreground">TRADER AI</h2>
-            <p className="text-xs text-muted-foreground">Inteligência Adaptativa para Mercados</p>
-          </div>
+        <div>
+          <h2 className="text-lg font-bold">Crypto Trading</h2>
+          <p className="text-xs text-muted-foreground">
+            {total} moeda(s) ativa(s) • {selected?.symbol?.replace("USDT", "") || "BTC"} selecionada
+          </p>
         </div>
         {isRunning && (
-          <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-400 border border-green-500/30 animate-pulse">
-            <Activity className="h-3 w-3" />
-            MONITORANDO
+          <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-400 border border-green-500/30">
+            <Activity className="h-3 w-3" /> AO VIVO
           </span>
         )}
       </div>
 
-      {/* Main Signal Card */}
-      {total > 0 && selected && (() => {
-        const signal     = getSignalAction(selected.previsao)
-        const color      = signal.color === "green" ? "#00e676" : signal.color === "red" ? "#ff3d57" : "#f59e0b"
-        const conf       = Math.min(99, Math.abs(selected.previsao) * 1000)
-        const coinAcc    = accuracyCache[selected.symbol]
-
-        return (
-          <div className="rounded-lg overflow-hidden border-2 transition-all relative"
-            style={{ background: "linear-gradient(135deg, #0a0a1a 0%, #1a1a2e 100%)", borderColor: color }}>
-            <div className="absolute inset-0 opacity-30"
-              style={{ background: `radial-gradient(circle at 30% 50%, ${color}20 0%, transparent 70%)` }} />
-
-            <div className="relative p-5">
-              {/* Header row */}
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-full flex items-center justify-center"
-                    style={{ background: `${color}20`, border: `1px solid ${color}` }}>
-                    <span className="text-lg">
-                      {signal.color === "green" ? "📈" : signal.color === "red" ? "📉" : "⏸"}
-                    </span>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground uppercase tracking-wider">RECOMENDAÇÃO IA</div>
-                    <div className="text-xl font-bold" style={{ color }}>{signal.text}</div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-xs text-muted-foreground">Acurácia ({selected.symbol.replace("USDT", "")})</div>
-                  <div className="text-2xl font-bold tabular-nums"
-                    style={{ color: (coinAcc?.acuracia ?? 0) >= 55 ? "#00e676" : (coinAcc?.acuracia ?? 0) >= 45 ? "#f59e0b" : "#ff3d57" }}>
-                    {coinAcc?.acuracia ?? 0}%
-                  </div>
-                  <div className="text-xs text-muted-foreground">{coinAcc?.acertos ?? 0}/{coinAcc?.total ?? 0} acertos</div>
-                </div>
-              </div>
-
-              {/* Moeda e confiança */}
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <div className="text-2xl font-bold text-white">{selected.symbol.replace("USDT", "")}</div>
-                  <div className="text-sm text-muted-foreground">${selected.price.toLocaleString()}</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-xs text-muted-foreground">Confiança IA</div>
-                  <div className="text-3xl font-bold tabular-nums"
-                    style={{ color: conf >= 60 ? "#00e676" : conf >= 30 ? "#f59e0b" : "#ff3d57" }}>
-                    {conf.toFixed(0)}%
-                  </div>
-                </div>
-              </div>
-
-              {/* Barra de confiança */}
-              <div className="h-1.5 rounded-full overflow-hidden bg-gray-800 mb-4">
-                <div className="h-full rounded-full transition-all duration-500"
-                  style={{
-                    width: `${conf}%`,
-                    background: `linear-gradient(90deg, ${color} 0%, ${color}80 100%)`
-                  }} />
-              </div>
-
-              {/* Footer */}
-              <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground">Tendência IA:</span>
-                  <span style={{
-                    color: dashboardStats.tendencia.direcao === "up" ? "#00e676"
-                         : dashboardStats.tendencia.direcao === "down" ? "#ff3d57" : "#f59e0b"
-                  }}>
-                    {dashboardStats.tendencia.direcao === "up" ? "Melhorando"
-                   : dashboardStats.tendencia.direcao === "down" ? "Piorando" : "Estável"}
-                    {dashboardStats.tendencia.variacao > 0 && ` +${dashboardStats.tendencia.variacao}%`}
-                  </span>
-                </div>
-                <div className="text-muted-foreground">Baseado em {coinAcc?.total ?? 0} análises</div>
-              </div>
-            </div>
-          </div>
-        )
-      })()}
-
-      {/* PREVISÕES MULTI-HORIZONTE - VERSÃO INSANA 10 HORIZONTES */}
+      {/* PREVISÕES 10 HORIZONTES */}
       {selected && (
-        <div className="rounded-xl bg-gradient-to-r from-secondary/50 to-secondary/30 border border-border/50 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                PREVISÕES 10 HORIZONTES
-              </span>
-            </div>
-            <div className="flex items-center gap-3 text-[10px]">
-              <span className="text-green-400">
-                C: {selected.consenso_curto?.toFixed(2)}%
-              </span>
-              <span className="text-yellow-400">
-                M: {selected.consenso_medio?.toFixed(2)}%
-              </span>
-              <span className="text-blue-400">
-                L: {selected.consenso_longo?.toFixed(2)}%
-              </span>
-            </div>
-          </div>
-          
-          {/* Grid 5x2 para 10 horizontes */}
+        <div className="rounded-xl border border-border/50 bg-card/30 p-4">
+          <div className="text-xs font-medium text-muted-foreground mb-3">PREVISÕES POR HORIZONTE</div>
           <div className="grid grid-cols-5 gap-2">
             {[
-              { time: "5s", value: selected.previsao_5s ?? 0, type: "micro" },
-              { time: "15s", value: selected.previsao_15s ?? 0, type: "micro" },
-              { time: "30s", value: selected.previsao_30s ?? 0, type: "micro" },
-              { time: "60s", value: selected.previsao_60s ?? 0, type: "micro" },
-              { time: "5m", value: selected.previsao_300s ?? 0, type: "intraday" },
-              { time: "15m", value: selected.previsao_900s ?? 0, type: "intraday" },
-              { time: "30m", value: selected.previsao_1800s ?? 0, type: "intraday" },
-              { time: "1h", value: selected.previsao_3600s ?? 0, type: "swing" },
-              { time: "5h", value: selected.previsao_18000s ?? 0, type: "swing" },
-              { time: "1d", value: selected.previsao_86400s ?? 0, type: "position" },
+              { time: "5s", value: selected.previsao_5s ?? 0 },
+              { time: "15s", value: selected.previsao_15s ?? 0 },
+              { time: "30s", value: selected.previsao_30s ?? 0 },
+              { time: "60s", value: selected.previsao_60s ?? 0 },
+              { time: "5m", value: selected.previsao_300s ?? 0 },
+              { time: "15m", value: selected.previsao_900s ?? 0 },
+              { time: "30m", value: selected.previsao_1800s ?? 0 },
+              { time: "1h", value: selected.previsao_3600s ?? 0 },
+              { time: "5h", value: selected.previsao_18000s ?? 0 },
+              { time: "1d", value: selected.previsao_86400s ?? 0 },
             ].map((pred, i) => {
               const value = pred.value ?? 0
               const isPositive = value >= 0
-              const intensidade = Math.min(1, Math.abs(value) / 2)
               const precoAlvo = selected.price * (1 + value / 100)
               
-              // Cores por tipo de horizonte
-              // Cores por tipo de horizonte
-              const typeColors: Record<string, string> = {
-                micro: isPositive ? 'rgba(0,230,118,' : 'rgba(255,61,87,',
-                intraday: isPositive ? 'rgba(0,200,255,' : 'rgba(255,100,50,',
-                swing: isPositive ? 'rgba(100,255,200,' : 'rgba(255,50,100,',
-                position: isPositive ? 'rgba(200,255,100,' : 'rgba(255,0,100,',
-              }
-              
               return (
-                <div 
-                  key={i}
-                  className="rounded-lg p-2 transition-all hover:scale-105 cursor-help"
-                  style={{
-                      background: isPositive 
-                        ? `linear-gradient(135deg, ${typeColors[pred.type] as string}${0.15 + intensidade * 0.3}) 0%, rgba(0,0,0,0.3) 100%)`
-                        : `linear-gradient(135deg, ${typeColors[pred.type] as string}${0.15 + intensidade * 0.3}) 0%, rgba(0,0,0,0.3) 100%)`,
-                      border: `1px solid ${isPositive ? '#00e67640' : '#ff3d5740'}`
-                    }}
-                >
-                  <div className="text-center">
-                    <div className="text-[9px] text-muted-foreground mb-1 font-bold">
-                      {pred.time}
-                    </div>
-                    <div className={`text-sm font-bold font-mono ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
-                      {value > 0 ? "+" : ""}{value.toFixed(2)}%
-                    </div>
-                    <div className="text-[8px] text-muted-foreground mt-0.5">
-                      ${precoAlvo.toLocaleString("en-US", { maximumFractionDigits: 0 })}
-                    </div>
-                    <div className="h-1 w-full bg-gray-800 rounded-full mt-1 overflow-hidden">
-                      <div 
-                        className={`h-full rounded-full transition-all duration-500 ${isPositive ? 'bg-green-400' : 'bg-red-400'}`}
-                        style={{ width: `${Math.min(100, Math.abs(value) * 50)}%` }}
-                      />
-                    </div>
+                <div key={i} className={`rounded-lg p-2 text-center border ${isPositive ? 'border-green-500/20 bg-green-500/5' : 'border-red-500/20 bg-red-500/5'}`}>
+                  <div className="text-[10px] text-muted-foreground">{pred.time}</div>
+                  <div className={`text-sm font-bold font-mono ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
+                    {value > 0 ? "+" : ""}{value.toFixed(2)}%
                   </div>
+                  <div className="text-[9px] text-muted-foreground">${precoAlvo.toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
                 </div>
               )
             })}
           </div>
-          
-          {/* Consenso Footer */}
-          <div className="flex items-center justify-between pt-3 mt-2 border-t border-border/30">
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${
-                (selected.consenso_curto ?? 0) > 0 ? 'bg-green-400' : 
-                (selected.consenso_curto ?? 0) < 0 ? 'bg-red-400' : 'bg-gray-400'
-              }`} />
-              <span className="text-[10px] text-muted-foreground">
-                Consenso: {
-                  (selected.consenso_curto ?? 0) > 0 && 
-                  (selected.consenso_medio ?? 0) > 0 && 
-                  (selected.consenso_longo ?? 0) > 0 
-                    ? "FORTE COMPRA 🚀" 
-                    : (selected.consenso_curto ?? 0) < 0 && 
-                      (selected.consenso_medio ?? 0) < 0 && 
-                      (selected.consenso_longo ?? 0) < 0 
-                      ? "FORTE VENDA 💥" 
-                      : "DIVERGENTE ⚠️"
-                }
-              </span>
-            </div>
-            <div className="flex items-center gap-3 text-[9px]">
-              <span className="text-green-400/70">C</span>
-              <span className="text-yellow-400/70">M</span>
-              <span className="text-blue-400/70">L</span>
-            </div>
-          </div>
         </div>
       )}
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[
-          { icon: <BarChart3 className="h-4 w-4" />,                               label: "MOEDAS",     value: total,         color: "" },
-          { icon: <Zap className="h-4 w-4 text-cyan-400" />,                        label: "MAIS FORTE", value: strongest?.symbol?.replace("USDT","") ?? "-", color: "text-cyan-400" },
-          { icon: <TrendingUp className="h-4 w-4 text-green-400" />,                label: "EM ALTA",    value: positiveCount, color: "text-green-400" },
-          { icon: <TrendingDown className="h-4 w-4 text-red-400" />,                label: "EM BAIXA",   value: negativeCount, color: "text-red-400" },
-        ].map(card => (
-          <div key={card.label} className="rounded-lg border border-border/50 bg-secondary/30 p-3">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              {card.icon}
-              <span className="text-xs">{card.label}</span>
-            </div>
-            <p className={cn("text-2xl font-bold mt-1", card.color)}>{card.value}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Timeframes */}
-      <div className="flex gap-1">
-        {[5, 10, 30, 60].map(tf => (
-          <button key={tf} onClick={() => setTimeframe(tf)}
-            className={cn(
-              "px-4 py-1.5 rounded-md text-sm font-medium transition-all",
-              timeframe === tf
-                ? "bg-amber-500/30 text-amber-400 border border-amber-500/40"
-                : "bg-secondary/50 text-muted-foreground hover:bg-secondary/80"
-            )}>
-            {tf}s
-          </button>
-        ))}
-      </div>
-
-      {/* Chart controls */}
-      {total > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 p-2 rounded-lg bg-secondary/20 border border-border/50">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">TIPO DE GRÁFICO</span>
-            <div className="flex gap-1">
-              {(["candlestick","line","area"] as const).map(type => (
-                <button key={type} onClick={() => setChartType(type)}
-                  className={cn(
-                    "px-3 py-1 rounded-md text-xs font-medium transition-all",
-                    chartType === type
-                      ? "bg-purple-500/30 text-purple-400 border border-purple-500/40"
-                      : "text-muted-foreground hover:bg-secondary/80"
-                  )}>
-                  {{ candlestick: "VELAS", line: "LINHA", area: "ÁREA" }[type]}
-                </button>
-              ))}
-            </div>
-          </div>
-          <button onClick={() => setShowIndicators(!showIndicators)}
-            className={cn(
-              "px-2 py-1 rounded-md text-xs transition-all",
-              showIndicators
-                ? "bg-cyan-500/30 text-cyan-400 border border-cyan-500/40"
-                : "text-muted-foreground"
-            )}>
-            {showIndicators ? "INDICADORES ATIVOS" : "INDICADORES INATIVOS"}
-          </button>
+      {/* Timeframes + Tipo de gráfico */}
+      <div className="flex items-center justify-between">
+        <div className="flex gap-1">
+          {[5, 10, 30, 60].map(tf => (
+            <button key={tf} onClick={() => setTimeframe(tf)}
+              className={cn("px-3 py-1 rounded-md text-xs font-medium", timeframe === tf ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" : "bg-secondary/50 text-muted-foreground")}>
+              {tf}s
+            </button>
+          ))}
         </div>
-      )}
+        <div className="flex gap-1">
+          {(["candlestick","line","area"] as const).map(type => (
+            <button key={type} onClick={() => setChartType(type)}
+              className={cn("px-3 py-1 rounded-md text-xs", chartType === type ? "bg-purple-500/20 text-purple-400" : "text-muted-foreground")}>
+              {{ candlestick: "Velas", line: "Linha", area: "Área" }[type]}
+            </button>
+          ))}
+        </div>
+      </div>
 
-      {/* Trading Chart */}
+      {/* Gráfico */}
       {selected && total > 0 && (
         <div className="rounded-lg border border-border/50 bg-secondary/20 p-2">
           <TradingChart
@@ -829,9 +655,6 @@ async function sendChatMessage() {
             prediction3600s={selected.previsao_3600s}
             prediction18000s={selected.previsao_18000s}
             prediction86400s={selected.previsao_86400s}
-            consensoCurto={selected.consenso_curto}
-            consensoMedio={selected.consenso_medio}
-            consensoLongo={selected.consenso_longo}
             timeframe={timeframe}
             symbol={selected.symbol}
             isActive={isRunning}
@@ -841,131 +664,55 @@ async function sendChatMessage() {
         </div>
       )}
 
-      {/* Coin selector bar */}
-      {total > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 p-2 rounded-lg bg-secondary/20 border border-border/50">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">MOEDA NO GRÁFICO</span>
-            <div className="flex flex-wrap gap-1">
-              {validCryptos.map(c => (
-                <button key={c.symbol} onClick={() => setSelectedCoinForChart(c.symbol)}
-                  className={cn(
-                    "px-3 py-1 rounded-md text-sm font-mono transition-all",
-                    selectedCoinForChart === c.symbol
-                      ? "bg-amber-500/30 text-amber-400 border border-amber-500/40"
-                      : "text-muted-foreground hover:bg-secondary/80"
-                  )}>
-                  {c.symbol.replace("USDT", "")}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            <span>{total} ativa(s)</span>
-          </div>
-        </div>
-      )}
-
-
-      {/* Market list */}
-      {total > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">ANÁLISE POR MOEDA</span>
-            <span className="text-xs text-muted-foreground">{total} moedas</span>
-          </div>
-          <div className="rounded-lg border border-border/50 bg-secondary/40 p-2 space-y-1 max-h-64 overflow-y-auto">
-            <div className="grid grid-cols-5 gap-2 text-[10px] font-medium text-muted-foreground uppercase pb-2 border-b border-border/30 px-2">
-              <span>MOEDA</span>
-              <span className="text-right">PREÇO</span>
-              <span className="text-right">VARIAÇÃO 24H</span>
-              <span className="text-right">CONFIANÇA IA</span>
-              <span className="text-right">SINAL</span>
-            </div>
-            {validCryptos.map(c => {
-              const signal = getSignalAction(c.previsao)
-              return (
-                <div key={c.id} className="grid grid-cols-5 gap-2 text-sm py-2 hover:bg-secondary/30 rounded px-2">
-                  <span className="font-medium text-foreground">{c.symbol.replace("USDT", "")}</span>
-                  <span className="text-right font-mono">${c.price.toFixed(2)}</span>
-                  <span className={cn("text-right font-mono",
-                    c.delta > 0 ? "text-green-400" : c.delta < 0 ? "text-red-400" : "text-muted-foreground")}>
-                    {c.delta > 0 ? "+" : ""}{c.delta.toFixed(2)}%
-                  </span>
-                  <span className="text-right text-cyan-400 font-mono">
-                    {(Math.abs(c.previsao) * 1000).toFixed(0)}%
-                  </span>
-                  <span className={cn(
-                    "text-right text-xs font-bold px-2 py-0.5 rounded w-16 ml-auto",
-                    signal.color === "green" && "bg-green-500/20 text-green-400",
-                    signal.color === "red"   && "bg-red-500/20   text-red-400",
-                    signal.color === "gray"  && "bg-gray-500/20  text-gray-400"
-                  )}>
-                    {signal.text}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Empty state */}
-      {total === 0 && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-8 text-center">
-          <p className="text-amber-400 font-medium">Nenhuma moeda carregada</p>
-          <p className="text-xs text-muted-foreground mt-2">
-            Clique em CARREGAR para selecionar as moedas que deseja analisar
-          </p>
-        </div>
-      )}
-
-      {/* Action Buttons */}
-      <div className="grid grid-cols-5 gap-3">
-        <Button onClick={() => handleCommand("crypto start", "start")}
-          disabled={loading !== null || total === 0}
-          className="bg-green-500/20 border border-green-500/30 text-green-400 hover:bg-green-500/30">
-          <Play className="h-4 w-4 mr-2" /> INICIAR IA
-        </Button>
-        <Button onClick={() => setShowCoinSelector(true)}
-          disabled={loading !== null}
-          className="bg-amber-500/20 border border-amber-500/30 text-amber-400 hover:bg-amber-500/30">
-          <RefreshCw className="h-4 w-4 mr-2" /> CARREGAR
-        </Button>
-        <Button onClick={() => handleCommand("crypto signal", "signal")}
-          disabled={loading !== null || total === 0}
-          className="bg-purple-500/20 border border-purple-500/30 text-purple-400 hover:bg-purple-500/30">
-          <Zap className="h-4 w-4 mr-2" /> SINAL
-        </Button>
-        <Button onClick={() => handleCommand("crypto stop", "stop")}
-          disabled={loading !== null}
-          className="bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30">
-          <Square className="h-4 w-4 mr-2" /> PARAR IA
-        </Button>
-        <Button onClick={() => { if (total === 0) { showNotification("Nenhuma moeda para remover", "info"); return }; setCoinsToClear([]); setShowClearCoinsModal(true) }}
-          disabled={loading !== null || total === 0}
-          className="bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30">
-          <Trash2 className="h-4 w-4 mr-2" /> LIMPAR
-        </Button>
-      </div>
-
-      {/* Coin buttons (duplicate selector) */}
+      {/* Seletor de moedas */}
       <div className="flex flex-wrap gap-1">
         {validCryptos.map(c => (
-          <button key={`${c.symbol}-${c.id}`} onClick={() => setSelectedCoinForChart(c.symbol)}
-            className={cn(
-              "px-3 py-1.5 rounded-md text-sm font-mono transition-all",
-              selectedCoinForChart === c.symbol
-                ? "bg-amber-500/30 text-amber-400 border border-amber-500/40 shadow-lg"
-                : "bg-secondary/50 text-muted-foreground hover:bg-secondary/80"
-            )}>
+          <button key={c.symbol} onClick={() => setSelectedCoinForChart(c.symbol)}
+            className={cn("px-3 py-1 rounded-md text-xs font-mono", selectedCoinForChart === c.symbol ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" : "bg-secondary/50 text-muted-foreground")}>
             {c.symbol.replace("USDT", "")}
           </button>
         ))}
       </div>
 
-      {/* ── MODALS ─────────────────────────────────── */}
+      {/* Botões de ação - 5 colunas */}
+      <div className="grid grid-cols-5 gap-2">
+        <Button onClick={() => handleCommand("crypto start", "start")} disabled={loading !== null || total === 0}
+          className="bg-green-500/20 border border-green-500/30 text-green-400 hover:bg-green-500/30 text-xs">
+          <Play className="h-3 w-3 mr-1" /> INICIAR
+        </Button>
+        <Button onClick={() => setShowCoinSelector(true)} disabled={loading !== null}
+          className="bg-amber-500/20 border border-amber-500/30 text-amber-400 hover:bg-amber-500/30 text-xs">
+          <RefreshCw className="h-3 w-3 mr-1" /> CARREGAR
+        </Button>
+        <Button onClick={() => handleCommand("crypto stop", "stop")} disabled={loading !== null}
+          className="bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30 text-xs">
+          <Square className="h-3 w-3 mr-1" /> PARAR
+        </Button>
+        {/* ✅ SINAL - chama a IA e mostra resposta */}
+        <Button onClick={handleSignalCommand} disabled={loading !== null || total === 0}
+          className="bg-purple-500/20 border border-purple-500/30 text-purple-400 hover:bg-purple-500/30 text-xs">
+          <Zap className="h-3 w-3 mr-1" /> SINAL
+        </Button>
+        {/* ✅ REMOVER */}
+        <Button onClick={() => { 
+          if (total === 0) { showNotification("Nenhuma moeda para remover", "info"); return }
+          setCoinsToClear([]); setShowClearCoinsModal(true) 
+        }} disabled={loading !== null || total === 0}
+          className="bg-gray-500/20 border border-gray-500/30 text-gray-400 hover:bg-gray-500/30 text-xs">
+          <Trash2 className="h-3 w-3 mr-1" /> REMOVER
+        </Button>
+      </div>
+
+      {/* ✅ Resposta do SINAL (aparece abaixo dos botões) */}
+      {signalResponse && (
+        <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+            <span className="text-xs font-medium text-purple-400">ANÁLISE DA IA</span>
+          </div>
+          <p className="text-sm text-muted-foreground leading-relaxed">{signalResponse}</p>
+        </div>
+      )}
 
       {/* Coin Selector Modal */}
       {showCoinSelector && (
@@ -1130,7 +877,25 @@ async function sendChatMessage() {
         </div>
       )}
 
+      {/* Loading do SINAL */}
+      {signalLoading && (
+        <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-4 flex items-center gap-3">
+          <div className="flex gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" />
+            <div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" style={{animationDelay: '0.15s'}} />
+            <div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" style={{animationDelay: '0.3s'}} />
+          </div>
+          <span className="text-xs text-purple-400">Analisando mercado...</span>
+        </div>
+      )}
 
+      {/* Empty state */}
+      {total === 0 && (
+        <div className="text-center py-10 text-muted-foreground">
+          <p>Nenhuma moeda carregada</p>
+          <p className="text-xs mt-2">Clique em CARREGAR para selecionar moedas</p>
+        </div>
+      )}
     </div>
   )
 }
