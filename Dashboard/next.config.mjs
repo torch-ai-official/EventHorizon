@@ -8,7 +8,7 @@ console.log('🔧 API_URL:', API_URL)  // ⭐ VERIFIQUE SE ESTÁ CORRETO
 
 const nextConfig = {
   // ⭐ REMOVA OU COMENTE 'output: export'
-  // output: 'export',  // ← COMENTE ESTA LINHA
+  output: 'export',  // ← COMENTE ESTA LINHA
   
   typescript: {
     ignoreBuildErrors: true,
