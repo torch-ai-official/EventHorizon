@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+torch
+requests
+numpy
+python-multipart
+websockets
+groq
