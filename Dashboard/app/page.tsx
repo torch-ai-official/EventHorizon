@@ -17,26 +17,19 @@ export default function UniverseOS() {
     error,
     units,
     pulses,
-    
     totalEnergy,
     totalPulses,
     createUnit,
     sendPulse,
     togglePause,
     executeCommand,
-    refreshUnits,
     pausePolling,
     resumePolling,
     clearUnits
   } = useApiSimulation()
 
-  const [startTime] = useState(() => new Date())
-  
   // ⭐ Estado para forçar re-render do CryptoApp
   const [refreshKey, setRefreshKey] = useState(0)
-  // ⭐ NOVO: Estado específico para remoção de moedas
-  const [coinsRemovedKey, setCoinsRemovedKey] = useState(0)
-   
   const [removedSymbols, setRemovedSymbols] = useState<Set<string>>(new Set())
 
   const connectionStatus = useMemo(() => {
@@ -56,36 +49,35 @@ export default function UniverseOS() {
 
   // Filtra apenas unidades crypto
   const cryptoUnits = useMemo(() => {
-  return units.filter(u => 
-    (u.symbol || u.tipo === "crypto") && 
-    !removedSymbols.has(u.symbol ?? "")
-  )
-}, [units, removedSymbols])
+    return units.filter(u => 
+      (u.symbol || u.tipo === "crypto") && 
+      !removedSymbols.has(u.symbol ?? "")
+    )
+  }, [units, removedSymbols])
 
   // ⭐ Função para forçar refresh dos dados
   const handleRefresh = useCallback(async () => {
     setRefreshKey(prev => prev + 1)
-    
-    if (refreshUnits) {
-      await refreshUnits()
-    }
-    
     try {
-      await executeCommand("refresh")
+      if (executeCommand) {
+        await executeCommand("refresh")
+      }
     } catch (error) {
       console.error("Refresh error:", error)
     }
-  }, [refreshUnits, executeCommand])
+  }, [executeCommand])
 
-  // ⭐ NOVO: Função chamada quando moedas são removidas
+  // ⭐ Função chamada quando moedas são removidas
   const handleCoinsRemoved = useCallback((symbols: string[]) => {
-  setRemovedSymbols(prev => {
-    const next = new Set(prev)
-    symbols.forEach(s => next.add(s))
-    return next
-  })
-  if (clearUnits) clearUnits()
-}, [clearUnits])
+    setRemovedSymbols(prev => {
+      const next = new Set(prev)
+      symbols.forEach(s => next.add(s))
+      return next
+    })
+    if (clearUnits && typeof clearUnits === 'function') {
+      clearUnits()
+    }
+  }, [clearUnits])
 
   if (!mounted) {
     return (
@@ -155,24 +147,16 @@ export default function UniverseOS() {
 
           <TabsContent value="dashboard" className="mt-0">
             <DashboardTab
-              isRunning={isRunning}
-              units={units}
-              pulses={pulses}
-              totalEnergy={totalEnergy}
-              totalPulses={totalPulses}
-              onCreateUnit={createUnit}
-              onSendPulse={sendPulse}
-              onTogglePause={togglePause}
             />
           </TabsContent>
 
           <TabsContent value="crypto" className="mt-0">
             <CryptoApp
-              key="crypto-app"  // ⭐ Usa a soma das duas chaves
+              key={`crypto-app-${refreshKey}`}
               cryptos={cryptoUnits}
               executeCommand={executeCommand}
               onRefresh={handleRefresh}
-              onCoinsRemoved={handleCoinsRemoved}  // ⭐ NOVO
+              onCoinsRemoved={handleCoinsRemoved}
               pausePolling={pausePolling}
               resumePolling={resumePolling}
               clearUnits={clearUnits}

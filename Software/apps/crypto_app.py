@@ -681,7 +681,7 @@ class CryptoApp:
                         'position_ema': 0.0,
                     }
 
-                alpha_swing = 0.1
+                alpha_swing = 1
                 for j in range(2):
                     old_val = self._historico_predicoes[moeda]['swing_ema'][j]
                     self._historico_predicoes[moeda]['swing_ema'][j] = (
@@ -692,7 +692,7 @@ class CryptoApp:
                     preds_percentual[7 + j] = new_val
                     print(f"🔍 [DEBUG {moeda}] EMA swing[{j}]: {old_val:.6f} → {new_val:.6f} (raw: {preds_percentual[7+j]:.6f})")
 
-                alpha_position = 0.05
+                alpha_position = 1
                 old_pos = self._historico_predicoes[moeda]['position_ema']
                 self._historico_predicoes[moeda]['position_ema'] = (
                     alpha_position * preds_percentual[9] + 

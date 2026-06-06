@@ -1,1 +1,1 @@
-export const API_BASE_URL = 'https://lucas4567-trading-ai.hf.space';
+export const API_BASE_URL = ""  // String vazia = mesma origem

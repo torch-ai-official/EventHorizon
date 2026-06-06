@@ -203,6 +203,24 @@ export function CryptoApp({
     tendencia: { ultima_hora: 0, direcao: "stable", variacao: 0 },
   })
 
+  // ⭐ Dados em tempo real (mesmo endpoint do Dashboard)
+  const [realtimeData, setRealtimeData] = useState<any>(null)
+
+  useEffect(() => {
+    const fetchRealtime = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/dashboard/realtime`)
+        const json = await res.json()
+        setRealtimeData(json)
+      } catch (e) {
+        // Silencioso - usa fallback dos cryptos
+      }
+    }
+    fetchRealtime()
+    const interval = setInterval(fetchRealtime, 3000)
+    return () => clearInterval(interval)
+  }, [])
+
     // Junto com os outros useState:
   const [signalResponse, setSignalResponse] = useState<string | null>(null)
   const [signalLoading, setSignalLoading] = useState(false)
@@ -330,6 +348,13 @@ async function sendChatMessage() {
     if (total > 0) fetchAllAccuracies()
   }, [total])
 
+
+  useEffect(() => {
+    if (total > 0 && !isRunning) {
+      showNotification(`${total} moeda(s) carregada(s). Clique em INICIAR para começar.`, "info")
+    }
+  }, [total, isRunning])
+
   // Aviso de saída quando IA está rodando
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -356,6 +381,32 @@ async function sendChatMessage() {
       previsao_15s: (selected as any).previsao_15s,
       previsao_30s: (selected as any).previsao_30s,
       previsao_60s: (selected as any).previsao_60s,
+    })
+  }
+}, [selected])
+
+  // ⭐ Persistir isRunning no localStorage para não perder ao trocar aba
+  useEffect(() => {
+    const saved = localStorage.getItem("trader_is_running")
+    if (saved === "true" && total > 0) {
+      setIsRunning(true)
+      if (resumePolling) resumePolling()
+    }
+  }, [total])
+
+  useEffect(() => {
+    localStorage.setItem("trader_is_running", String(isRunning))
+  }, [isRunning])
+
+  // Adicione este log para debug
+useEffect(() => {
+  if (selected) {
+    console.log("🔍 PREVISÕES REAIS:", {
+      symbol: selected.symbol,
+      previsao_5s: selected.previsao_5s,
+      previsao_15s: selected.previsao_15s,
+      previsao_60s: selected.previsao_60s,
+      previsao_300s: selected.previsao_300s,
     })
   }
 }, [selected])
@@ -583,39 +634,45 @@ async function sendChatMessage() {
       </div>
 
       {/* PREVISÕES 10 HORIZONTES */}
-      {selected && (
-        <div className="rounded-xl border border-border/50 bg-card/30 p-4">
-          <div className="text-xs font-medium text-muted-foreground mb-3">PREVISÕES POR HORIZONTE</div>
-          <div className="grid grid-cols-5 gap-2">
-            {[
-              { time: "5s", value: selected.previsao_5s ?? 0 },
-              { time: "15s", value: selected.previsao_15s ?? 0 },
-              { time: "30s", value: selected.previsao_30s ?? 0 },
-              { time: "60s", value: selected.previsao_60s ?? 0 },
-              { time: "5m", value: selected.previsao_300s ?? 0 },
-              { time: "15m", value: selected.previsao_900s ?? 0 },
-              { time: "30m", value: selected.previsao_1800s ?? 0 },
-              { time: "1h", value: selected.previsao_3600s ?? 0 },
-              { time: "5h", value: selected.previsao_18000s ?? 0 },
-              { time: "1d", value: selected.previsao_86400s ?? 0 },
-            ].map((pred, i) => {
-              const value = pred.value ?? 0
-              const isPositive = value >= 0
-              const precoAlvo = selected.price * (1 + value / 100)
-              
-              return (
-                <div key={i} className={`rounded-lg p-2 text-center border ${isPositive ? 'border-green-500/20 bg-green-500/5' : 'border-red-500/20 bg-red-500/5'}`}>
-                  <div className="text-[10px] text-muted-foreground">{pred.time}</div>
-                  <div className={`text-sm font-bold font-mono ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
-                    {value > 0 ? "+" : ""}{value.toFixed(2)}%
+      {/* PREVISÕES 10 HORIZONTES - Dados REAIS do dashboard/realtime */}
+      {realtimeData?.moedas && (() => {
+        const moedaRT = realtimeData.moedas.find(
+          (m: any) => m.symbol === selected?.symbol?.replace("USDT", "")
+        )
+        if (!moedaRT) return null
+        
+        return (
+          <div className="rounded-xl border border-border/50 bg-card/30 p-4">
+            <div className="text-xs font-medium text-muted-foreground mb-3">PREVISÕES POR HORIZONTE</div>
+            <div className="grid grid-cols-5 gap-2">
+              {[
+                { time: "5s", value: moedaRT.previsoes?.['5s'] ?? 0 },
+                { time: "15s", value: moedaRT.previsoes?.['15s'] ?? 0 },
+                { time: "30s", value: moedaRT.previsoes?.['30s'] ?? 0 },
+                { time: "60s", value: moedaRT.previsoes?.['60s'] ?? 0 },
+                { time: "5min", value: moedaRT.previsoes?.['5min'] ?? 0 },
+                { time: "15min", value: moedaRT.previsoes?.['15min'] ?? 0 },
+                { time: "30min", value: moedaRT.previsoes?.['30min'] ?? 0 },
+                { time: "1h", value: moedaRT.previsoes?.['1h'] ?? 0 },
+                { time: "5h", value: moedaRT.previsoes?.['5h'] ?? 0 },
+                { time: "1d", value: moedaRT.previsoes?.['1d'] ?? 0 },
+              ].map((pred, i) => {
+                const isPositive = pred.value >= 0
+                const precoAlvo = moedaRT.price * (1 + pred.value / 100)
+                return (
+                  <div key={i} className={`rounded-lg p-2 text-center border ${isPositive ? 'border-green-500/20 bg-green-500/5' : 'border-red-500/20 bg-red-500/5'}`}>
+                    <div className="text-[10px] text-muted-foreground">{pred.time}</div>
+                    <div className={`text-sm font-bold font-mono ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
+                      {pred.value > 0 ? "+" : ""}{pred.value.toFixed(2)}%
+                    </div>
+                    <div className="text-[9px] text-muted-foreground">${precoAlvo.toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
                   </div>
-                  <div className="text-[9px] text-muted-foreground">${precoAlvo.toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Timeframes + Tipo de gráfico */}
       <div className="flex items-center justify-between">
@@ -637,11 +694,39 @@ async function sendChatMessage() {
         </div>
       </div>
 
-      {/* Gráfico */}
-      {selected && total > 0 && (
+                  {/* Estado 1: Nenhuma moeda carregada */}
+      {total === 0 && (
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-8 text-center">
+          <p className="text-amber-400 font-medium">Nenhuma moeda carregada</p>
+          <p className="text-xs text-muted-foreground mt-2">
+            Clique em CARREGAR para selecionar as moedas que deseja analisar.
+          </p>
+        </div>
+      )}
+
+      {/* Estado 2: Moedas carregadas, mas IA não iniciada */}
+      {total > 0 && !isRunning && (
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-8 text-center">
+          <p className="text-amber-400 font-medium">Sistema parado</p>
+          <p className="text-xs text-muted-foreground mt-2">
+            Clique em INICIAR IA para começar o monitoramento em tempo real.
+          </p>
+        </div>
+      )}
+
+      {/* Estado 3: IA rodando, mas gráfico ainda carregando */}
+      {total > 0 && isRunning && (!selected?.candles || selected.candles.length === 0) && (
+        <div className="rounded-lg border border-border/50 bg-secondary/20 p-8 text-center">
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-cyan-400 mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground">Carregando dados do gráfico...</p>
+        </div>
+      )}
+
+      {/* Estado 4: IA rodando e gráfico pronto */}
+      {total > 0 && isRunning && selected && selected.candles && selected.candles.length > 0 && (
         <div className="rounded-lg border border-border/50 bg-secondary/20 p-2">
           <TradingChart
-            key={`${selected.symbol}-${timeframe}-${chartKey}`}
+            key={`${selected.symbol}`}
             candles={selected.candles}
             currentPrice={selected.price}
             prediction={selected.previsao}
@@ -664,6 +749,7 @@ async function sendChatMessage() {
         </div>
       )}
 
+
       {/* Seletor de moedas */}
       <div className="flex flex-wrap gap-1">
         {validCryptos.map(c => (
@@ -676,17 +762,25 @@ async function sendChatMessage() {
 
       {/* Botões de ação - 5 colunas */}
       <div className="grid grid-cols-5 gap-2">
-        <Button onClick={() => handleCommand("crypto start", "start")} disabled={loading !== null || total === 0}
-          className="bg-green-500/20 border border-green-500/30 text-green-400 hover:bg-green-500/30 text-xs">
-          <Play className="h-3 w-3 mr-1" /> INICIAR
+        {/* Botão INICIAR/PARAR dinâmico */}
+        <Button 
+          onClick={() => handleCommand(isRunning ? "crypto stop" : "crypto start", isRunning ? "stop" : "start")} 
+          disabled={loading !== null || total === 0}
+          className={cn(
+            "text-xs",
+            isRunning 
+              ? "bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30" 
+              : "bg-green-500/20 border border-green-500/30 text-green-400 hover:bg-green-500/30"
+          )}>
+          {isRunning ? (
+            <><Square className="h-3 w-3 mr-1" /> PARAR</>
+          ) : (
+            <><Play className="h-3 w-3 mr-1" /> {total > 0 && !isRunning ? "CONTINUAR" : "INICIAR"}</>
+          )}
         </Button>
         <Button onClick={() => setShowCoinSelector(true)} disabled={loading !== null}
           className="bg-amber-500/20 border border-amber-500/30 text-amber-400 hover:bg-amber-500/30 text-xs">
           <RefreshCw className="h-3 w-3 mr-1" /> CARREGAR
-        </Button>
-        <Button onClick={() => handleCommand("crypto stop", "stop")} disabled={loading !== null}
-          className="bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30 text-xs">
-          <Square className="h-3 w-3 mr-1" /> PARAR
         </Button>
         {/* ✅ SINAL - chama a IA e mostra resposta */}
         <Button onClick={handleSignalCommand} disabled={loading !== null || total === 0}
@@ -705,14 +799,25 @@ async function sendChatMessage() {
 
       {/* ✅ Resposta do SINAL (aparece abaixo dos botões) */}
       {signalResponse && (
-        <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
-            <span className="text-xs font-medium text-purple-400">ANÁLISE DA IA</span>
-          </div>
-          <p className="text-sm text-muted-foreground leading-relaxed">{signalResponse}</p>
+      <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+          <span className="text-xs font-medium text-cyan-400">ANÁLISE DA IA</span>
         </div>
-      )}
+        <p className="text-sm text-muted-foreground leading-relaxed">{signalResponse}</p>
+      </div>
+    )}
+
+    {signalLoading && (
+      <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-4 flex items-center gap-3">
+        <div className="flex gap-1.5">
+          <div className="w-2 h-2 rounded-full bg-cyan-400 animate-bounce" />
+          <div className="w-2 h-2 rounded-full bg-cyan-400 animate-bounce" style={{animationDelay: '0.15s'}} />
+          <div className="w-2 h-2 rounded-full bg-cyan-400 animate-bounce" style={{animationDelay: '0.3s'}} />
+        </div>
+        <span className="text-xs text-cyan-400">Analisando mercado...</span>
+      </div>
+    )}
 
       {/* Coin Selector Modal */}
       {showCoinSelector && (
@@ -874,18 +979,6 @@ async function sendChatMessage() {
               </>
             )}
           </div>
-        </div>
-      )}
-
-      {/* Loading do SINAL */}
-      {signalLoading && (
-        <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-4 flex items-center gap-3">
-          <div className="flex gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" />
-            <div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" style={{animationDelay: '0.15s'}} />
-            <div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" style={{animationDelay: '0.3s'}} />
-          </div>
-          <span className="text-xs text-purple-400">Analisando mercado...</span>
         </div>
       )}
 

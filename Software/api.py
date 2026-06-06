@@ -42,12 +42,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 USUARIOS_FILE = "data/usuarios.json"
 
 
-@app.get("/")
-def dashboard():
-    response = FileResponse(os.path.join(BASE_DIR, "index.html"))
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
 
 @app.post("/criar")
 def criar_dado():
@@ -280,9 +274,15 @@ async def dashboard_realtime():
             "acuracias_reais": acuracias_reais,
             "previsoes": {
                 "5s": round(dado.get("previsao_5s", 0), 4),
+                "15s": round(dado.get("previsao_15s", 0), 4),
+                "30s": round(dado.get("previsao_30s", 0), 4),
+                "60s": round(dado.get("previsao_60s", 0), 4),
                 "5min": round(dado.get("previsao_300s", 0), 4),
                 "15min": round(dado.get("previsao_900s", 0), 4),
+                "30min": round(dado.get("previsao_1800s", 0), 4),
                 "1h": round(dado.get("previsao_3600s", 0), 4),
+                "5h": round(dado.get("previsao_18000s", 0), 4),
+                "1d": round(dado.get("previsao_86400s", 0), 4),
             }
         })
     
@@ -412,3 +412,8 @@ async def chatbot(request: Request):
 # ⭐ Serve o frontend estático (build do Next.js)
 if os.path.exists("Dashboard/out"):
     app.mount("/", StaticFiles(directory="Dashboard/out", html=True), name="frontend")
+
+if __name__ == "__main__":
+    import uvicorn
+    # ⭐ Porta 7860 para o Hugging Face
+    uvicorn.run(app, host="0.0.0.0", port=7860)

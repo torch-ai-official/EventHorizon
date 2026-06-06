@@ -104,7 +104,7 @@ export function ChatBot() {
     setLoading(true)
     
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/chatbot`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://lucas4567-trading-ai.hf.space"}/chatbot`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
