@@ -77,19 +77,17 @@ export async function middleware(request: NextRequest) {
   }
 
   // 4. Logado + rota protegida → verifica onboarding
-  // 4. Logado + rota protegida → verifica onboarding
   if (estaLogado && !ehRotaPublica && pathname !== "/onboarding") {
     const { data: perfil } = await supabase
-      .from("users")  // ❌ ERRADO
+      .from("perfis")  // ✅ CORRIGIDO
       .select("onboarding_completo")
-      .eq("id", user.id)
+      .eq("user_id", user.id)  // ✅ CORRIGIDO
       .single()
 
     if (perfil && !perfil.onboarding_completo) {
       return NextResponse.redirect(new URL("/onboarding", request.url))
     }
   }
-
   return response
 }
 
