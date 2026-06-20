@@ -47,12 +47,16 @@ def loop_simulacao():
 
         contador += 1
 
+        # ⭐ Salva leve (JSON) a cada 100 ticks (~10 segundos)
         if contador % 100 == 0:
-            universo.salvar()
+            universo.salvar_leve()
+
+        # ⭐ Salva modelos PyTorch a cada 1000 ticks (~100 segundos)
+        if contador % 1000 == 0:
             universo.mentes.salvar()
 
         time.sleep(0.1)
-
+        
 # FRONTEND (Next.js na porta 3000 - HOST 0.0.0.0)
 def start_frontend():
     global frontend_process
@@ -69,9 +73,9 @@ def start_frontend():
 # API
 def start_api():
     print("Iniciando API...")
-    # ⭐ host="0.0.0.0" permite acesso externo
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
+    
 def esperar_servico(porta, nome):
     print(f"Aguardando {nome}...")
     while not porta_em_uso(porta):
@@ -84,6 +88,16 @@ threading.Thread(target=start_frontend, daemon=True).start()
 threading.Thread(target=start_api, daemon=True).start()
 
 esperar_servico(8000, "API")
+
+# ⭐ Restauração atrasada das moedas
+def start_crypto_restauracao():
+    time.sleep(5)
+    crypto = next((a for a in universo.apps if a.nome == "crypto_app"), None)
+    if crypto:
+        crypto.iniciar_restauracao_async()
+
+threading.Thread(target=start_crypto_restauracao, daemon=True).start()
+
 esperar_servico(3000, "Frontend Next.js")
 
 # ⭐ MOSTRA O IP CORRETO PARA ACESSAR DO CELULAR

@@ -169,13 +169,37 @@ export function CryptoApp({
 }: CryptoAppProps) {
 
   // ── UI state ──────────────────────────────
-  const [timeframe,           setTimeframe]           = useState(5)
+  const [timeframe, setTimeframe] = useState(() => {
+    try {
+      const config = JSON.parse(localStorage.getItem("trader_config") || "{}")
+      return config.timeframePadrao || 5
+    } catch {
+      return 5
+    }
+  })
+
   const [loading,             setLoading]             = useState<string | null>(null)
   const [isRunning,           setIsRunning]           = useState(false)
-  const [chartType,           setChartType]           = useState<"candlestick" | "line" | "area">("candlestick")
+  const [chartType, setChartType] = useState<"candlestick" | "line" | "area">(() => {
+    try {
+      const config = JSON.parse(localStorage.getItem("trader_config") || "{}")
+      return config.graficoTipo || "candlestick"
+    } catch {
+      return "candlestick"
+    }
+  })
+
   const [showIndicators,      setShowIndicators]      = useState(true)
-  const [selectedCoinForChart,setSelectedCoinForChart]= useState<string>("BTCUSDT")
-  const [selectedCoins,       setSelectedCoins]       = useState<string[]>(["BTCUSDT", "ETHUSDT"])
+  const [selectedCoinForChart, setSelectedCoinForChart] = useState(() => {
+    try {
+      const config = JSON.parse(localStorage.getItem("trader_config") || "{}")
+      return config.moedaPadrao || "BTCUSDT"
+    } catch {
+      return "BTCUSDT"
+    }
+  })
+  
+  const [selectedCoins       , setSelectedCoins]      = useState<string[]>([])  // ⭐ Começa vazio
   const [showCoinSelector,    setShowCoinSelector]    = useState(false)
   const [chartKey,            setChartKey]            = useState(0)
   const [notification,        setNotification]        = useState<{ message: string; type: "success" | "error" | "info" } | null>(null)
@@ -537,23 +561,24 @@ useEffect(() => {
     setLoading(buttonId)
 
     // START
-    if (command.includes("start")) {
-      if (total === 0) {
-        showNotification("Carregue moedas antes de iniciar a IA", "error")
-        setLoading(null)
-        return
-      }
-      setIsRunning(true)
-      if (resumePolling) resumePolling()
-      try {
-        await executeCommand(command)
-        showNotification("IA iniciada. Monitorando mercado em tempo real.", "success")
-      } catch {
-        showNotification("Erro ao iniciar IA", "error")
-      }
+    
+  if (command.includes("start")) {
+    if (total === 0) {
+      showNotification("Carregue moedas antes de iniciar a IA", "error")
       setLoading(null)
       return
     }
+    setIsRunning(true)
+    if (resumePolling) resumePolling()
+    try {
+      await executeCommand(command)  // Sempre chama crypto start
+      showNotification("IA iniciada. Monitorando mercado em tempo real.", "success")
+    } catch {
+      showNotification("Erro ao iniciar IA", "error")
+    }
+    setLoading(null)
+    return
+  }
 
     // STOP
     if (command.includes("stop")) {
@@ -574,6 +599,7 @@ useEffect(() => {
       await executeCommand(command)
 
       if (command.includes("spawn")) {
+        setIsRunning(false)
         showNotification(`${selectedCoins.length} moeda(s) carregadas.`, "success")
         if (resumePolling) resumePolling()
         localStorage.setItem(STORAGE_KEY, JSON.stringify(selectedCoins))
@@ -752,12 +778,16 @@ useEffect(() => {
 
       {/* Seletor de moedas */}
       <div className="flex flex-wrap gap-1">
-        {validCryptos.map(c => (
-          <button key={c.symbol} onClick={() => setSelectedCoinForChart(c.symbol)}
-            className={cn("px-3 py-1 rounded-md text-xs font-mono", selectedCoinForChart === c.symbol ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" : "bg-secondary/50 text-muted-foreground")}>
-            {c.symbol.replace("USDT", "")}
-          </button>
-        ))}
+        {validCryptos
+          .filter((c, index, self) => 
+            index === self.findIndex(t => t.symbol === c.symbol)  // ⭐ Remove duplicados
+          )
+          .map(c => (
+            <button key={c.symbol} onClick={() => setSelectedCoinForChart(c.symbol)}
+              className={cn("px-3 py-1 rounded-md text-xs font-mono", selectedCoinForChart === c.symbol ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" : "bg-secondary/50 text-muted-foreground")}>
+              {c.symbol.replace("USDT", "")}
+            </button>
+          ))}
       </div>
 
       {/* Botões de ação - 5 colunas */}
@@ -773,10 +803,10 @@ useEffect(() => {
               : "bg-green-500/20 border border-green-500/30 text-green-400 hover:bg-green-500/30"
           )}>
           {isRunning ? (
-            <><Square className="h-3 w-3 mr-1" /> PARAR</>
-          ) : (
-            <><Play className="h-3 w-3 mr-1" /> {total > 0 && !isRunning ? "CONTINUAR" : "INICIAR"}</>
-          )}
+          <><Square className="h-3 w-3 mr-1" /> PARAR</>
+        ) : (
+          <><Play className="h-3 w-3 mr-1" /> {total > 0 ? "INICIAR" : "CARREGUE PRIMEIRO"}</>
+        )}
         </Button>
         <Button onClick={() => setShowCoinSelector(true)} disabled={loading !== null}
           className="bg-amber-500/20 border border-amber-500/30 text-amber-400 hover:bg-amber-500/30 text-xs">

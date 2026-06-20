@@ -3,7 +3,8 @@
 
 import { useState, useEffect } from "react"
 
-const API_BASE = ""
+import { API_BASE_URL } from "@/lib/api"
+const API_BASE = API_BASE_URL
 
 export function DashboardTab() {
   const [data, setData] = useState<any>(null)

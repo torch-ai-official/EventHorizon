@@ -1,0 +1,36 @@
+{
+  "sinais": [
+    {
+      "moeda": "BTC",
+      "direcao": "COMPRAR",
+      "horizonte": "1min",
+      "confianca_min": 30,
+      "ativo": false
+    },
+    {
+      "moeda": "BTC",
+      "direcao": "COMPRAR",
+      "horizonte": "5min",
+      "confianca_min": 40,
+      "ativo": true
+    }
+  ],
+  "protecao": {
+    "drawdown_max": -10,
+    "losses_seguidos": 3,
+    "volume_anormal": 50,
+    "acuracia_min": 45,
+    "pausar_apos_losses": true
+  },
+  "oportunidades": {
+    "acuracia_alta": 65,
+    "melhor_horario": true,
+    "nova_moeda": 60
+  },
+  "canais": {
+    "navegador": true,
+    "telegram": false,
+    "email": false,
+    "som": true
+  }
+}

@@ -191,11 +191,22 @@ class Universo:
         ]
 
         mente = self.mentes.obter(dado["id"])
+        
+        # ⭐ CORREÇÃO: Se a mente ainda não foi carregada
+        if mente is None:
+            return [0.0] * 4  # Retorna 4 zeros (neutro)
+        
         return mente.forward(entrada)  # Retorna lista [5s, 15s, 30s, 60s]
+
 
     def forward(self, dado, energia_outro, distancia):
         """Compatibilidade: retorna apenas o primeiro horizonte (5s)"""
         saida_multi = self.forward_multi(dado, energia_outro, distancia)
+        
+        # ⭐ CORREÇÃO: Verifica se a lista não está vazia
+        if not saida_multi or len(saida_multi) == 0:
+            return 0.0
+        
         return saida_multi[0] if saida_multi else 0.0
 
     # ── Aprender (delega para a Mente) ────────────────────────────────────────

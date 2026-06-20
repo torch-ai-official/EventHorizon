@@ -307,8 +307,19 @@ class CryptoApp:
         if comando.startswith("crypto spawn"):
             partes = comando.split()
             moedas = [m.upper() for m in partes[2:]]
-            self.salvar_ultimas_moedas()  # ✅ FORÇA SALVAR
-            return self.spawn_moedas(moedas)
+            self.salvar_ultimas_moedas()
+            resultado = self.spawn_moedas(moedas)
+            
+            # ⭐ Se já estava rodando, reinicia
+            if self.rodando_api:
+                self.rodando_api = False
+                time.sleep(1)
+                self.rodando_api = True
+                self.loop_thread = threading.Thread(target=self.loop_api, daemon=True)
+                self.loop_thread.start()
+                resultado.append("🔄 IA reiniciada com novas moedas")
+            
+            return resultado
 
         if comando == "crypto signal":
             return self._gerar_sinais()

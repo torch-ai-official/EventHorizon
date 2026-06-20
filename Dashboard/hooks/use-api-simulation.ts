@@ -4,7 +4,15 @@ import { useCallback, useEffect, useState } from "react"
 import { API_BASE_URL } from '@/lib/api';
 
 const MAX_ITEMS = 50
-const POLL_INTERVAL = 2000
+
+const POLL_INTERVAL = (() => {
+  try {
+    const config = JSON.parse(localStorage.getItem("trader_config") || "{}")
+    return (config.frequenciaAtualizacao || 5) * 1000
+  } catch {
+    return 5000
+  }
+})()
 
 interface ApiStatus {
   energia_total: number

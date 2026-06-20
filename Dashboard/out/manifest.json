@@ -9,7 +9,7 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/icon.svg",
+      "src": "/foto.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"

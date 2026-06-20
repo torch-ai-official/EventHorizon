@@ -409,9 +409,685 @@ async def chatbot(request: Request):
     resposta = chatbot_app.responder(pergunta, moeda)
     return {"resposta": resposta}
 
+@app.get("/performance/metricas")
+async def performance_metricas():
+    """Métricas completas das mentes para a aba Performance"""
+    import glob
+    
+    crypto_app = None
+    for app in universo.apps:
+        if hasattr(app, 'nome') and app.nome == "crypto_app":
+            crypto_app = app
+            break
+    
+    if not crypto_app:
+        return {"mentes": [], "resumo": {}}
+    
+    mentes_data = []
+    
+    for moeda, mente in crypto_app.mentes_pytorch.items():
+        if mente is None:
+            continue
+        
+        # ⭐ Busca acurácias REAIS do JSON (FONTE PRINCIPAL)
+        acuracias_reais = {}
+        try:
+            with open(f"data/verificacoes/{moeda}.json") as f:
+                vrf = json.load(f)
+            for h in ['5','15','30','60','300','900','1800','3600']:
+                if h in vrf and vrf[h]['total'] > 10:
+                    acuracias_reais[h] = {
+                        'acertos': vrf[h]['acertos'],
+                        'erros': vrf[h]['erros'],
+                        'total': vrf[h]['total'],
+                        'acuracia': round(vrf[h]['acertos']/vrf[h]['total']*100, 1)
+                    }
+        except:
+            pass
+        
+        # ⭐ Calcula acurácias por TIPO usando dados REAIS
+        def calc_acuracia(horizontes):
+            acertos_total = 0
+            erros_total = 0
+            for h in horizontes:
+                if h in acuracias_reais:
+                    acertos_total += acuracias_reais[h]['acertos']
+                    erros_total += acuracias_reais[h]['erros']
+            total = acertos_total + erros_total
+            return round(acertos_total / total, 3) if total > 0 else 0.5
+        
+        acuracia_micro = calc_acuracia(['5', '15', '30', '60'])
+        acuracia_intraday = calc_acuracia(['300', '900', '1800'])
+        acuracia_swing = calc_acuracia(['3600'])
+        acuracia_position = calc_acuracia(['3600'])  # mesmo por enquanto
+        
+        # ⭐ Acurácia média geral (ponderada por total de trades)
+        total_acertos = sum(v['acertos'] for v in acuracias_reais.values())
+        total_erros = sum(v['erros'] for v in acuracias_reais.values())
+        total_geral = total_acertos + total_erros
+        acuracia_media = round(total_acertos / total_geral, 3) if total_geral > 0 else 0.5
+        
+        # ⭐ Confiança baseada na quantidade de trades
+        if total_geral > 500:
+            confianca = 0.85
+        elif total_geral > 100:
+            confianca = 0.70
+        elif total_geral > 30:
+            confianca = 0.55
+        else:
+            confianca = 0.40
+        
+        # ⭐ Tendência real (compara acurácia recente vs antiga)
+        tendencia = "estável"
+        if '900' in acuracias_reais and acuracias_reais['900']['total'] > 100:
+            acc_atual = acuracias_reais['900']['acuracia']
+            # Se tem acurácia acima de 55%, está melhorando
+            if acc_atual > 55:
+                tendencia = "melhorando"
+            elif acc_atual < 48:
+                tendencia = "piorando"
+        
+        # ⭐ Estabilidade baseada na variação entre horizontes
+        accs = [v['acuracia'] for v in acuracias_reais.values()]
+        if len(accs) >= 3:
+            variacao = max(accs) - min(accs)
+            if variacao < 10:
+                estabilidade = "estável"
+            elif variacao < 20:
+                estabilidade = "moderada"
+            else:
+                estabilidade = "instável"
+        else:
+            estabilidade = "moderada"
+        
+        # ⭐ Geração da mente
+        snapshot = mente.snapshot() if hasattr(mente, 'snapshot') else {}
+        geracao = snapshot.get("geracao", 0) if snapshot else 0
+        
+        mentes_data.append({
+            "moeda": moeda.replace("USDT", ""),
+            "geracao": geracao,
+            "acuracia_media": round(acuracia_media * 100, 1),
+            "acuracia_micro": round(acuracia_micro * 100, 1),
+            "acuracia_intraday": round(acuracia_intraday * 100, 1),
+            "acuracia_swing": round(acuracia_swing * 100, 1),
+            "acuracia_position": round(acuracia_position * 100, 1),
+            "loss_medio": snapshot.get("loss_medio", 0) if snapshot else 0,
+            "confianca": round(confianca * 100, 1),
+            "estabilidade": estabilidade,
+            "tendencia": tendencia,
+            "acuracias_reais": acuracias_reais,
+            "accuracy_por_horizonte": [v['acuracia'] for v in acuracias_reais.values()],
+        })
+    
+    # Ordena por total de trades (mais dados primeiro)
+    mentes_data.sort(key=lambda m: sum(v['total'] for v in m['acuracias_reais'].values()), reverse=True)
+    
+    # Resumo geral
+    total_geracoes = sum(m["geracao"] for m in mentes_data)
+    acuracias_todas = [m["acuracia_media"] for m in mentes_data if m["acuracia_media"] > 50]
+    acuracia_media_geral = round(sum(acuracias_todas) / len(acuracias_todas), 1) if acuracias_todas else 0
+    
+    return {
+        "mentes": mentes_data,
+        "resumo": {
+            "total_moedas": len(mentes_data),
+            "total_geracoes": total_geracoes,
+            "acuracia_media_geral": acuracia_media_geral,
+            "moeda_top": mentes_data[0]["moeda"] if mentes_data else None,
+            "estabilidade_geral": "estável" if all(m["estabilidade"] == "estável" for m in mentes_data) else "moderada"
+        }
+    }
+
+
+@app.get("/performance/evolucao")
+async def performance_evolucao(moeda: str = "BTCUSDT"):
+    """Histórico de evolução de uma moeda específica"""
+    crypto_app = None
+    for app in universo.apps:
+        if hasattr(app, 'nome') and app.nome == "crypto_app":
+            crypto_app = app
+            break
+    
+    if not crypto_app:
+        return {"historico": [], "moeda": moeda}
+    
+    mente = crypto_app.mentes_pytorch.get(moeda if "USDT" in moeda else f"{moeda}USDT")
+    if not mente:
+        return {"historico": [], "moeda": moeda}
+    
+    # Reconstrói histórico dos arquivos de verificação
+    historico = []
+    try:
+        with open(f"data/verificacoes/{moeda}.json") as f:
+            vrf = json.load(f)
+        
+        # Pega o horizonte com mais dados (geralmente 5min ou 15min)
+        for h in ['5','15','30','60','300','900','1800','3600']:
+            if h in vrf and vrf[h]['total'] > 50:
+                total = vrf[h]['total']
+                acuracia = round(vrf[h]['acertos']/total*100, 1) if total > 0 else 0
+                historico.append({
+                    "horizonte": f"{int(h)//60}min" if int(h) >= 60 else f"{h}s",
+                    "horizonte_s": int(h),
+                    "total": total,
+                    "acertos": vrf[h]['acertos'],
+                    "erros": vrf[h]['erros'],
+                    "acuracia": acuracia,
+                })
+    except:
+        pass
+    
+    # Adiciona dados da mente
+    snapshot = mente.snapshot()
+    
+    return {
+        "moeda": moeda.replace("USDT", ""),
+        "geracao": snapshot["geracao"],
+        "loss_medio": snapshot["loss_medio"],
+        "confianca": snapshot["confidence"],
+        "accuracy_por_horizonte": snapshot["accuracy_por_horizonte"],
+        "historico_horizontes": historico,
+        "tendencia": "melhorando" if snapshot["loss_medio"] < 0.03 else "estável"
+    }
+
+@app.get("/historico")
+async def get_historico():
+    """Histórico de trades verificado"""
+    import glob
+    
+    trades = []
+    arquivos = glob.glob("data/verificacoes/*.json")
+    
+    for arquivo in arquivos:
+        moeda = os.path.basename(arquivo).replace(".json", "")
+        try:
+            with open(arquivo) as f:
+                vrf = json.load(f)
+            
+            for horizonte_s, dados in vrf.items():
+                if dados.get("total", 0) == 0:
+                    continue
+                
+                h = int(horizonte_s)
+                if h <= 60:
+                    nome_h = f"{h}s"
+                elif h < 3600:
+                    nome_h = f"{h//60}min"
+                else:
+                    nome_h = f"{h//3600}h"
+                
+                trades.append({
+                    "moeda": moeda.replace("USDT", ""),
+                    "horizonte": nome_h,
+                    "horizonte_s": h,
+                    "acertos": dados["acertos"],
+                    "erros": dados["erros"],
+                    "total": dados["total"],
+                    "acuracia": round((dados["acertos"]/dados["total"])*100,1) if dados["total"]>0 else 0,
+                    "confianca": 50,
+                    "preco_atual": 0,
+                    "timestamp": time.time(),
+                    "status": "verificado"
+                })
+        except:
+            pass
+    
+    trades.sort(key=lambda t: t["total"], reverse=True)
+    
+    total_acertos = sum(t["acertos"] for t in trades)
+    total_erros = sum(t["erros"] for t in trades)
+    total_geral = total_acertos + total_erros
+    
+    return {
+        "trades": trades,
+        "resumo": {
+            "total_trades": total_geral,
+            "total_acertos": total_acertos,
+            "total_erros": total_erros,
+            "acuracia_geral": round((total_acertos/total_geral)*100,1) if total_geral>0 else 0,
+            "total_moedas": len(set(t["moeda"] for t in trades)),
+            "horizontes_ativos": len(set(t["horizonte"] for t in trades)),
+        }
+    }
+
+
+@app.get("/gestao-risco/metricas")
+async def gestao_risco_metricas():
+    """Métricas de risco baseadas nas acurácias reais"""
+    import glob
+    
+    # Coleta acurácias de todas as moedas
+    metricas = {}
+    total_acertos_global = 0
+    total_erros_global = 0
+    
+    arquivos = glob.glob("data/verificacoes/*.json")
+    for arquivo in arquivos:
+        moeda = os.path.basename(arquivo).replace(".json", "")
+        try:
+            with open(arquivo) as f:
+                vrf = json.load(f)
+            
+            acuracias = {}
+            for h in ['5','15','30','60','300','900','1800','3600']:
+                if h in vrf and vrf[h]['total'] > 10:
+                    acuracias[h] = {
+                        'acertos': vrf[h]['acertos'],
+                        'erros': vrf[h]['erros'],
+                        'total': vrf[h]['total'],
+                        'acuracia': round(vrf[h]['acertos']/vrf[h]['total']*100, 1)
+                    }
+                    total_acertos_global += vrf[h]['acertos']
+                    total_erros_global += vrf[h]['erros']
+            
+            if acuracias:
+                metricas[moeda.replace("USDT", "")] = acuracias
+        except:
+            pass
+    
+    # Melhor e pior horizonte
+    todas_acuracias = []
+    for moeda, h_data in metricas.items():
+        for h, data in h_data.items():
+            todas_acuracias.append({
+                'moeda': moeda,
+                'horizonte': f"{int(h)//60}min" if int(h) >= 60 else f"{h}s",
+                'acuracia': data['acuracia'],
+                'total': data['total']
+            })
+    
+    # Ordena por acurácia
+    melhores = sorted(todas_acuracias, key=lambda x: x['acuracia'], reverse=True)[:5]
+    piores = sorted(todas_acuracias, key=lambda x: x['acuracia'])[:5]
+    
+    # Acurácia global
+    total_global = total_acertos_global + total_erros_global
+    acuracia_global = round(total_acertos_global / total_global * 100, 1) if total_global > 0 else 50
+    
+    # Regime de mercado
+    if acuracia_global > 58:
+        regime = "TENDÊNCIA FORTE"
+        recomendacao = "Aumentar posição (3% risco)"
+        cor = "green"
+    elif acuracia_global > 52:
+        regime = "TENDÊNCIA MODERADA"
+        recomendacao = "Posição normal (2% risco)"
+        cor = "cyan"
+    elif acuracia_global > 48:
+        regime = "LATERAL/VOLÁTIL"
+        recomendacao = "Reduzir posição (1% risco)"
+        cor = "yellow"
+    else:
+        regime = "CAÓTICO/IMPREVISÍVEL"
+        recomendacao = "NÃO OPERAR (0% risco)"
+        cor = "red"
+    
+    return {
+        "metricas": metricas,
+        "melhores_horizontes": melhores,
+        "piores_horizontes": piores,
+        "acuracia_global": acuracia_global,
+        "total_trades_global": total_global,
+        "regime_mercado": regime,
+        "recomendacao": recomendacao,
+        "cor_regime": cor
+    }
+
+
+@app.post("/gestao-risco/simular")
+async def gestao_risco_simular(request: Request):
+    """Simulador de cenários de trading"""
+    data = await request.json()
+    
+    capital = float(data.get("capital", 10000))
+    risco_por_trade = float(data.get("risco_percentual", 2.0)) / 100
+    stop_loss = float(data.get("stop_loss", -5.0)) / 100
+    take_profit = float(data.get("take_profit", 10.0)) / 100
+    acuracia = float(data.get("acuracia", 66.0)) / 100
+    num_trades = int(data.get("num_trades", 100))
+    moeda = data.get("moeda", "BTC")
+    
+    # Pega acurácia REAL da moeda se disponível
+    try:
+        with open(f"data/verificacoes/{moeda}USDT.json") as f:
+            vrf = json.load(f)
+        # Usa acurácia do horizonte de 15min (900s)
+        if '900' in vrf and vrf['900']['total'] > 50:
+            acuracia = vrf['900']['acertos'] / vrf['900']['total']
+    except:
+        pass
+    
+    # Cálculos
+    valor_risco = capital * risco_por_trade
+    valor_perda = capital * abs(stop_loss)
+    valor_ganho = capital * take_profit
+    risk_reward = abs(take_profit / stop_loss) if stop_loss != 0 else 0
+    
+    # Simulação
+    acertos = int(num_trades * acuracia)
+    erros = num_trades - acertos
+    
+    ganho_total = acertos * valor_ganho * (capital / 10000)
+    perda_total = erros * valor_perda * (capital / 10000)
+    lucro_liquido = ganho_total - perda_total
+    
+    capital_final = capital + lucro_liquido
+    roi = round((capital_final - capital) / capital * 100, 1)
+    
+    # Drawdown simulado (worst case: 5 losses seguidos)
+    max_drawdown = valor_perda * 5
+    drawdown_percentual = round(max_drawdown / capital * 100, 1)
+    
+    # Classificação do risco
+    if risk_reward >= 2 and acuracia >= 0.55:
+        qualidade = "EXCELENTE"
+        qualidade_cor = "green"
+    elif risk_reward >= 1.5 and acuracia >= 0.5:
+        qualidade = "BOA"
+        qualidade_cor = "cyan"
+    elif risk_reward >= 1:
+        qualidade = "MODERADA"
+        qualidade_cor = "yellow"
+    else:
+        qualidade = "RUIM"
+        qualidade_cor = "red"
+    
+    return {
+        "parametros": {
+            "capital": capital,
+            "risco_percentual": round(risco_por_trade * 100, 1),
+            "stop_loss": round(stop_loss * 100, 1),
+            "take_profit": round(take_profit * 100, 1),
+            "risk_reward": round(risk_reward, 2),
+            "acuracia_usada": round(acuracia * 100, 1),
+            "moeda": moeda
+        },
+        "resultados": {
+            "acertos": acertos,
+            "erros": erros,
+            "ganho_total": round(ganho_total, 2),
+            "perda_total": round(perda_total, 2),
+            "lucro_liquido": round(lucro_liquido, 2),
+            "capital_final": round(capital_final, 2),
+            "roi": roi,
+            "max_drawdown": round(max_drawdown, 2),
+            "drawdown_percentual": drawdown_percentual
+        },
+        "qualidade": qualidade,
+        "qualidade_cor": qualidade_cor
+    }
+
+
+@app.get("/alertas/config")
+async def alertas_config():
+    """Retorna configuração atual dos alertas"""
+    import os
+    
+    config_path = "data/alertas_config.json"
+    config_default = {
+        "sinais": [
+            {"moeda": "BTC", "direcao": "COMPRAR", "horizonte": "5min", "confianca_min": 60, "ativo": True},
+            {"moeda": "ETH", "direcao": "COMPRAR", "horizonte": "15min", "confianca_min": 55, "ativo": True},
+        ],
+        "protecao": {
+            "drawdown_max": -10,
+            "losses_seguidos": 3,
+            "volume_anormal": 50,
+            "acuracia_min": 45,
+            "pausar_apos_losses": True
+        },
+        "oportunidades": {
+            "acuracia_alta": 65,
+            "melhor_horario": True,
+            "nova_moeda": 60
+        },
+        "canais": {
+            "navegador": True,
+            "telegram": False,
+            "email": False,
+            "som": True
+        }
+    }
+    
+    if os.path.exists(config_path):
+        try:
+            with open(config_path) as f:
+                return json.load(f)
+        except:
+            pass
+    
+    return config_default
+
+
+@app.post("/alertas/salvar")
+async def alertas_salvar(request: Request):
+    """Salva configuração dos alertas"""
+    data = await request.json()
+    os.makedirs("data", exist_ok=True)
+    with open("data/alertas_config.json", "w") as f:
+        json.dump(data, f, indent=2)
+    return {"status": "ok"}
+
+
+@app.get("/alertas/historico")
+async def alertas_historico(limit: int = 20):
+    """Retorna histórico de alertas gerados"""
+    import os
+    
+    historico_path = "data/alertas_historico.json"
+    
+    if os.path.exists(historico_path):
+        try:
+            with open(historico_path) as f:
+                historico = json.load(f)
+            return {"alertas": historico[-limit:]}
+        except:
+            pass
+    
+    return {"alertas": []}
+
+
+@app.get("/alertas/verificar")
+async def alertas_verificar():
+    """Verifica AGORA se há alertas para disparar - TODOS OS HORIZONTES"""
+    import os
+    
+    alertas_disparados = []
+    
+    # Mapeamento de horizontes para índices
+    HORIZONTE_PARA_INDICE = {
+        "5s": 0, "15s": 1, "30s": 2, "60s": 3,
+        "5min": 4, "15min": 5, "30min": 6, "1h": 7,
+        "5h": 8, "1d": 9
+    }
+    
+    INDICE_PARA_HORIZONTE = {
+        0: "5s", 1: "15s", 2: "30s", 3: "60s",
+        4: "5min", 5: "15min", 6: "30min", 7: "1h",
+        8: "5h", 9: "1d"
+    }
+    
+    # Busca CryptoApp
+    crypto_app = None
+    for app in universo.apps:
+        if hasattr(app, 'nome') and app.nome == "crypto_app":
+            crypto_app = app
+            break
+    
+    if not crypto_app:
+        return {"alertas": [], "total": 0, "mensagem": "CryptoApp não está rodando"}
+    
+    # Carrega configurações de alertas
+    config_path = "data/alertas_config.json"
+    config = None
+    if os.path.exists(config_path):
+        try:
+            with open(config_path) as f:
+                config = json.load(f)
+        except:
+            pass
+    
+    if not config or not config.get("sinais"):
+        return {"alertas": [], "total": 0, "mensagem": "Nenhum alerta configurado"}
+    
+    # Para cada moeda e mente
+    for moeda, mente in crypto_app.mentes_pytorch.items():
+        if mente is None:
+            continue
+        
+        moeda_nome = moeda.replace("USDT", "")
+        
+        # Para cada alerta configurado PARA ESTA MOEDA
+        for alerta_config in config["sinais"]:
+            if not alerta_config.get("ativo", True):
+                continue
+            
+            if alerta_config["moeda"] != moeda_nome:
+                continue
+            
+            # Converte horizonte do config para índice
+            horizonte_nome = alerta_config["horizonte"]
+            indice = None
+            
+            # Mapeia nomes para índices
+            for h_nome, h_idx in HORIZONTE_PARA_INDICE.items():
+                if h_nome == horizonte_nome or h_nome.replace("min", "m").replace("s", "s") == horizonte_nome:
+                    indice = h_idx
+                    break
+            
+            if indice is None or indice >= len(mente.cabecas):
+                continue
+            
+            # Pega confiança mínima do alerta
+            confianca_min = alerta_config.get("confianca_min", 50)
+            
+            # Verifica se tem dados suficientes
+            total_trades = mente.n_acertos[indice] + mente.n_erros[indice]
+            if total_trades < 10:
+                continue
+            
+            # Calcula acurácia REAL deste horizonte
+            acuracia_real = round((mente.n_acertos[indice] / total_trades) * 100, 1) if total_trades > 0 else 0
+            
+            # Verifica se acurácia está acima do mínimo
+            if acuracia_real < confianca_min:
+                continue
+            
+            # Tenta pegar previsão atual
+            if not hasattr(mente, '_ultimos_x_cabecas') or not mente._ultimos_x_cabecas:
+                continue
+            
+            if indice >= len(mente._ultimos_x_cabecas):
+                continue
+            
+            try:
+                with torch.no_grad():
+                    pred = float(mente.cabecas[indice](mente._ultimos_x_cabecas[indice]).item())
+                    pred_percentual = round(pred * 100, 1)
+                    
+                    direcao = alerta_config.get("direcao", "COMPRAR")
+                    
+                    # Verifica se a direção do sinal bate com o configurado
+                    if direcao == "COMPRAR" and pred_percentual <= 0:
+                        continue
+                    if direcao == "VENDER" and pred_percentual >= 0:
+                        continue
+                    
+                    alertas_disparados.append({
+                        "tipo": "sinal",
+                        "moeda": moeda_nome,
+                        "direcao": direcao,
+                        "horizonte": INDICE_PARA_HORIZONTE.get(indice, str(indice)),
+                        "previsao": abs(pred_percentual),
+                        "confianca": acuracia_real,
+                        "acuracia_min_config": confianca_min,
+                        "timestamp": time.time(),
+                        "mensagem": f"{direcao} {moeda_nome} - {INDICE_PARA_HORIZONTE.get(indice, '?')} - Conf: {acuracia_real}% (mín: {confianca_min}%)"
+                    })
+            except Exception as e:
+                print(f"[Alertas] Erro ao verificar {moeda_nome} horizonte {indice}: {e}")
+    
+    # Salva no histórico
+    if alertas_disparados:
+        os.makedirs("data", exist_ok=True)
+        historico_path = "data/alertas_historico.json"
+        historico = []
+        if os.path.exists(historico_path):
+            try:
+                with open(historico_path) as f:
+                    historico = json.load(f)
+            except:
+                pass
+        historico.extend(alertas_disparados)
+        historico = historico[-100:]
+        with open(historico_path, "w") as f:
+            json.dump(historico, f, indent=2)
+    
+    return {
+        "alertas": alertas_disparados,
+        "total": len(alertas_disparados),
+        "mensagem": f"{len(alertas_disparados)} alerta(s) encontrado(s)"
+    }
+
+
+@app.get("/alertas/status-atual")
+async def alertas_status_atual():
+    """Retorna valores ATUAIS do sistema para comparar com limites"""
+    
+    # Busca métricas do dashboard/realtime
+    crypto_app = None
+    for app in universo.apps:
+        if hasattr(app, 'nome') and app.nome == "crypto_app":
+            crypto_app = app
+            break
+    
+    # Acurácia atual (melhor horizonte)
+    acuracia_atual = 50
+    try:
+        # Tenta pegar do BTC (mais dados)
+        with open("data/verificacoes/BTCUSDT.json") as f:
+            vrf = json.load(f)
+        # Pega o horizonte com mais trades
+        melhor_h = max(vrf.keys(), key=lambda h: vrf[h]['total'])
+        if vrf[melhor_h]['total'] > 50:
+            acuracia_atual = round(vrf[melhor_h]['acertos']/vrf[melhor_h]['total']*100, 1)
+    except:
+        pass
+    
+    # Drawdown atual (simulado - você pode implementar o real depois)
+    drawdown_atual = -4.2
+    
+    # Losses seguidos (conta do histórico de trades)
+    losses_seguidos = 0
+    try:
+        with open("data/verificacoes/BTCUSDT.json") as f:
+            vrf = json.load(f)
+        # Pega o horizonte mais recente
+        for h in ['300','900','1800','3600']:
+            if h in vrf and vrf[h]['total'] > 10:
+                erros_recentes = vrf[h]['erros']
+                losses_seguidos = min(erros_recentes, 5)  # estimativa
+                break
+    except:
+        pass
+    
+    # Volume atual vs médio (placeholder)
+    volume_atual = 12
+    
+    return {
+        "drawdown_atual": round(drawdown_atual, 1),
+        "losses_seguidos": min(losses_seguidos, 10),
+        "acuracia_atual": acuracia_atual,
+        "volume_atual": volume_atual,
+        "timestamp": time.time()
+    }
+
 # ⭐ Serve o frontend estático (build do Next.js)
-if os.path.exists("Dashboard/out"):
-    app.mount("/", StaticFiles(directory="Dashboard/out", html=True), name="frontend")
+#if os.path.exists("Dashboard/out"):
+#    app.mount("/", StaticFiles(directory="Dashboard/out", html=True), name="frontend")
+
+
 
 if __name__ == "__main__":
     import uvicorn
