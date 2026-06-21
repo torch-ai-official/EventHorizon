@@ -4,6 +4,7 @@
 // SIDEBAR DE NAVEGAÇÃO
 // components/Sidebar.tsx
 // ============================================================
+
 import { useAlertas } from "@/contexts/AlertasContext"
 import { useState } from "react"
 import Link from "next/link"
@@ -50,7 +51,6 @@ const ITENS_NAV = [
   { href: "/historico",     icone: ScrollText,      rotulo: "Histórico",      descricao: "Trades realizados" },
   { href: "/performance",   icone: Target,          rotulo: "Performance",    descricao: "Acurácia por moeda" },
   { href: "/risco",         icone: ShieldCheck,     rotulo: "Gestão de Risco",descricao: "Stop-loss e take-profit" },
-  { href: "/moedas",        icone: Coins,           rotulo: "Moedas",         descricao: "Gerenciar moedas" },
   { href: "/perfil",        icone: User,            rotulo: "Perfil",         descricao: "Dados e plano" },
   { href: "/configuracoes", icone: Settings,        rotulo: "Configurações",  descricao: "Preferências" },
 ]
