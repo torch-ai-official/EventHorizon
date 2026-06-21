@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import {
   User, Mail, Crown, Calendar, TrendingUp,
   Target, Activity, Zap, LogOut, Shield,
-  Clock, Loader2, Edit2, Check
+  Clock, Loader2, Edit2, Check, X, AlertTriangle
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -16,13 +16,11 @@ import { API_BASE_URL } from "@/lib/api"
 // TIPOS
 // ============================================
 
-type Plano = "basico" | "pro" | "enterprise"
-
 interface PerfilUsuario {
   id: string
   nome: string
   email: string
-  plano: Plano
+  plano: string
   status: string
   created_at: string
   onboarding_completo: boolean
@@ -33,16 +31,6 @@ interface Estatisticas {
   total_verificacoes: number
   acuracia_media: number
   melhor_moeda: string | null
-}
-
-// ============================================
-// CONSTANTES
-// ============================================
-
-const COR_PLANO: Record<Plano, { cor: string; bg: string; borda: string; label: string; preco: string }> = {
-  basico: { cor: "text-cyan-400", bg: "bg-cyan-500/10", borda: "border-cyan-500/30", label: "Básico", preco: "Grátis" },
-  pro: { cor: "text-violet-400", bg: "bg-violet-500/10", borda: "border-violet-500/30", label: "Pro", preco: "R$ 197/mês" },
-  enterprise: { cor: "text-amber-400", bg: "bg-amber-500/10", borda: "border-amber-500/30", label: "Enterprise", preco: "R$ 497/mês" },
 }
 
 // ============================================
@@ -60,6 +48,12 @@ export default function PerfilPage() {
   })
   const [loading, setLoading] = useState(true)
   const [saindo, setSaindo] = useState(false)
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  
+  // Editar nome
+  const [editandoNome, setEditandoNome] = useState(false)
+  const [novoNome, setNovoNome] = useState("")
+  const [salvandoNome, setSalvandoNome] = useState(false)
 
   useEffect(() => {
     carregarPerfil()
@@ -94,6 +88,7 @@ export default function PerfilPage() {
         created_at: data.created_at || new Date().toISOString(),
         onboarding_completo: data.onboarding_completo || false
       })
+      setNovoNome(data.nome || "")
     } catch (e) {
       console.error("Erro ao carregar perfil:", e)
     } finally {
@@ -131,6 +126,25 @@ export default function PerfilPage() {
     }
   }
 
+  async function salvarNome() {
+    if (!perfil || !novoNome.trim()) return
+    setSalvandoNome(true)
+    
+    try {
+      await supabase
+        .from("perfis")
+        .update({ nome: novoNome.trim() })
+        .eq("user_id", perfil.id)
+      
+      setPerfil({ ...perfil, nome: novoNome.trim() })
+      setEditandoNome(false)
+    } catch (e) {
+      console.error("Erro ao salvar nome:", e)
+    } finally {
+      setSalvandoNome(false)
+    }
+  }
+
   async function handleLogout() {
     setSaindo(true)
     try {
@@ -142,10 +156,6 @@ export default function PerfilPage() {
     } catch {
       setSaindo(false)
     }
-  }
-
-  function handleUpgrade() {
-    router.push("/checkout?plano=pro")
   }
 
   if (loading) {
@@ -163,8 +173,6 @@ export default function PerfilPage() {
       </div>
     )
   }
-
-  const planoInfo = COR_PLANO[perfil.plano]
 
   return (
     <div className="p-6 space-y-6 max-w-2xl mx-auto">
@@ -185,18 +193,41 @@ export default function PerfilPage() {
           </div>
           
           <div className="flex-1 min-w-0">
-            <h2 className="text-xl font-bold truncate">{perfil.nome}</h2>
+            {/* Nome editável */}
+            {editandoNome ? (
+              <div className="flex items-center gap-2 mb-1">
+                <input
+                  type="text"
+                  value={novoNome}
+                  onChange={e => setNovoNome(e.target.value)}
+                  className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-white text-lg font-bold w-full focus:outline-none focus:border-cyan-500"
+                  autoFocus
+                  onKeyDown={e => { if (e.key === "Enter") salvarNome(); if (e.key === "Escape") setEditandoNome(false) }}
+                />
+                <button onClick={salvarNome} disabled={salvandoNome} className="text-green-400 hover:text-green-300">
+                  {salvandoNome ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                </button>
+                <button onClick={() => setEditandoNome(false)} className="text-zinc-500 hover:text-zinc-300">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 mb-1">
+                <h2 className="text-xl font-bold truncate">{perfil.nome}</h2>
+                <button onClick={() => { setNovoNome(perfil.nome); setEditandoNome(true) }} className="text-zinc-500 hover:text-cyan-400 transition-colors">
+                  <Edit2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+            
             <p className="text-sm text-muted-foreground truncate flex items-center gap-1">
               <Mail className="w-3.5 h-3.5" />
               {perfil.email}
             </p>
             <div className="flex items-center gap-2 mt-2">
-              <span className={cn(
-                "px-2.5 py-0.5 rounded-full text-xs font-medium border",
-                planoInfo.cor, planoInfo.bg, planoInfo.borda
-              )}>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-medium border bg-cyan-500/10 text-cyan-400 border-cyan-500/30">
                 <Crown className="w-3 h-3 inline mr-1" />
-                Plano {planoInfo.label}
+                Plano Básico
               </span>
               <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-400 border border-green-500/20">
                 {perfil.status === "ativo" ? "Ativo" : "Inativo"}
@@ -209,7 +240,7 @@ export default function PerfilPage() {
         <div className="grid grid-cols-2 gap-3 mb-6">
           {[
             { label: "Membro desde", value: new Date(perfil.created_at).toLocaleDateString("pt-BR"), icon: Calendar },
-            { label: "Plano atual", value: `${planoInfo.label} (${planoInfo.preco})`, icon: Crown },
+            { label: "Plano atual", value: "Básico (Grátis)", icon: Crown },
           ].map((info, i) => (
             <div key={i} className="rounded-lg bg-secondary/20 p-3">
               <div className="flex items-center gap-1.5 mb-1">
@@ -221,20 +252,41 @@ export default function PerfilPage() {
           ))}
         </div>
 
-        {/* Botões */}
-        <div className="flex gap-2">
-          {perfil.plano === "basico" && (
-            <Button onClick={handleUpgrade} className="flex-1 bg-amber-500/20 border border-amber-500/30 text-amber-400 hover:bg-amber-500/30">
-              <Crown className="w-4 h-4 mr-2" />
-              Fazer Upgrade
-            </Button>
-          )}
-          <Button onClick={handleLogout} disabled={saindo} variant="outline" className="flex-1">
-            <LogOut className="w-4 h-4 mr-2" />
-            {saindo ? "Saindo..." : "Sair"}
-          </Button>
-        </div>
+        {/* Botão Sair */}
+        <Button 
+          onClick={() => setShowLogoutConfirm(true)} 
+          disabled={saindo} 
+          variant="outline" 
+          className="w-full"
+        >
+          <LogOut className="w-4 h-4 mr-2" />
+          {saindo ? "Saindo..." : "Sair da conta"}
+        </Button>
       </div>
+
+      {/* Modal de confirmação de saída */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="bg-zinc-900 rounded-2xl p-6 w-96 border border-zinc-800 shadow-2xl">
+            <div className="text-center mb-4">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/30 mb-3">
+                <AlertTriangle className="w-6 h-6 text-amber-400" />
+              </div>
+              <h3 className="text-lg font-bold text-white">Sair da conta?</h3>
+              <p className="text-sm text-zinc-400 mt-1">Você precisará fazer login novamente para acessar.</p>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={() => setShowLogoutConfirm(false)} variant="outline" className="flex-1">
+                Cancelar
+              </Button>
+              <Button onClick={handleLogout} className="flex-1 bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30">
+                <LogOut className="w-4 h-4 mr-2" />
+                Sair
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Estatísticas */}
       <div className="rounded-xl border border-border/50 bg-secondary/10 p-6">
@@ -271,7 +323,7 @@ export default function PerfilPage() {
         <div className="space-y-2">
           {[
             { texto: "Conta criada", data: new Date(perfil.created_at).toLocaleDateString("pt-BR"), icon: Calendar },
-            { texto: "Onboarding completo", data: perfil.onboarding_completo ? "Sim ✅" : "Não ⏳", icon: Check },
+            { texto: "Onboarding completo", data: perfil.onboarding_completo ? "Sim" : "Não", icon: Check },
             { texto: "Último acesso", data: new Date().toLocaleDateString("pt-BR"), icon: Clock },
           ].map((atv, i) => (
             <div key={i} className="flex items-center justify-between p-2 rounded bg-secondary/20">

@@ -406,7 +406,13 @@ async def chatbot(request: Request):
     data = await request.json()
     pergunta = data.get("pergunta", "")
     moeda = data.get("moeda", "BTCUSDT")
-    resposta = chatbot_app.responder(pergunta, moeda)
+    nome_trader = data.get("nome_trader", None)  # ⭐ NOVO
+    
+    # Se tem nome_trader, atualiza o chatbot
+    if nome_trader:
+        chatbot_app.set_nome_trader(nome_trader)
+    
+    resposta = chatbot_app.responder(pergunta, moeda, nome_trader)
     return {"resposta": resposta}
 
 @app.get("/performance/metricas")

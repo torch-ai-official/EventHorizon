@@ -250,7 +250,7 @@ export function CryptoApp({
   const [signalLoading, setSignalLoading] = useState(false)
 
   // Função que chama a IA para análise
-  // ⭐ Substitua a função handleSignalCommand por esta:
+  
 
 // ⭐ Função que chama o chatbot do backend
 async function handleSignalCommand() {
@@ -260,22 +260,44 @@ async function handleSignalCommand() {
   setSignalResponse(null)
   
   try {
-    // ✅ CORRETO: Chama o endpoint /chatbot
     const response = await fetch(`${API_BASE_URL}/chatbot`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ 
-        pergunta: `Faça uma análise completa de ${selected.symbol.replace("USDT", "")} agora. 
-        Considere: preço atual, previsões dos horizontes, consenso entre prazos, RSI, regime de mercado.
-        Com base nesses dados, qual a recomendação?`,
-        moeda: selected.symbol
+        pergunta: `ANÁLISE DE SINAL - ${selected.symbol.replace("USDT", "")}
+
+Dê uma recomendação DIRETA e ACIONÁVEL. O trader quer saber O QUE FAZER.
+
+Formato OBRIGATÓRIO da resposta:
+
+📊 **SINAL: [COMPRAR/VENDER/AGUARDAR]**
+💰 Preço atual: $[VALOR]
+🎯 Preço alvo: $[VALOR] ([X]%)
+🛑 Stop Loss: $[VALOR] ([X]%)
+⏱️ Horizonte recomendado: [5min/15min/30min/1h]
+📈 Confiança: [X]%
+
+📝 **Análise (máximo 3 frases):**
+[Seu raciocínio mais importante]
+
+⚠️ **Risco:** [1 frase sobre o risco]
+
+NÃO FALE de:
+- Consenso entre prazos
+- RSI (a menos que seja extremo)
+- "Mercado em ranging"
+- "Mercado lateral"
+- Previsões de todos os horizontes (só o horizonte recomendado)
+
+Seja DIRETO. O trader quer AÇÃO.`,
+        moeda: selected.symbol,
       })
     })
     const data = await response.json()
     setSignalResponse(data.resposta || "Não foi possível gerar análise.")
   } catch (error) {
     console.error("Erro no chatbot:", error)
-    setSignalResponse("❌ Erro ao conectar com o assistente. Verifique se o servidor está rodando.")
+    setSignalResponse("❌ Erro ao conectar com o assistente.")
   } finally {
     setSignalLoading(false)
   }

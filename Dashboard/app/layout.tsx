@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'  // ⭐ IMPORTE Viewport
 import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
+import { ChatBot } from "@/components/apps/ChatBot"
 
 const geist = Geist({ subsets: ["latin"] });
 const geistMono = Geist_Mono({ subsets: ["latin"] });
@@ -28,7 +29,9 @@ export default function RootLayout({
     <html lang="pt-BR">
       <body className="font-sans antialiased">
         {children}
+        <ChatBot /> 
       </body>
+      
     </html>
   )
 }
