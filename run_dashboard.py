@@ -103,6 +103,7 @@ esperar_servico(3000, "Frontend Next.js")
 # ⭐ MOSTRA O IP CORRETO PARA ACESSAR DO CELULAR
 print("\n" + "="*50)
 print(f"📱 Para acessar do seu CELULAR:")
+
 print(f"   1. Conecte o celular na mesma rede WiFi")
 print(f"   2. Abra o navegador e acesse: http://{LOCAL_IP}:3000")
 print(f"   3. A API está em: http://{LOCAL_IP}:8000")

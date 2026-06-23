@@ -13,6 +13,12 @@ from concurrent.futures import ThreadPoolExecutor
 from Software.core.universe_instance import lock_universo
 from Software.core.mind_pytorch import MenteTorch, HORIZONTES, N_HORIZONTES
 from Software.core.mind_pytorch import DelayedRewardBuffer
+from telegram_sender import enviar_sinal_telegram, formatar_sinal
+
+# Configurações do Bot
+TELEGRAM_TOKEN = "8898574077:AAFnKzYpum6CWiZgca4zgvAo6hB79qnT-rM"
+CANAL_VIP_ID = "-1004322239279"
+
 def pegar_todos_precos(tentativas=2):
     url = "https://api.binance.com/api/v3/ticker/price"
     for _ in range(tentativas):
@@ -352,6 +358,10 @@ class CryptoApp:
         if comando == "crypto report":
             relatorio = self.gerar_relatorio_desempenho()
             return [json.dumps(relatorio)]
+        
+        if comando == "crypto rr":
+            self.medir_risk_reward()
+            return ["📊 Análise de Risk/Reward gerada no terminal"]
 
         if comando.startswith("crypto remove"):
             partes = comando.split()
@@ -719,6 +729,10 @@ class CryptoApp:
 
                 # ✅ O resto continua igual daqui pra baixo
                 previsao = preds_percentual[0]
+
+                if hasattr(self, 'resultados_verificacao'):
+                    resultados_moeda = self.resultados_verificacao.get(moeda, {})
+                    self.verificar_e_enviar_sinal(moeda, preco, preds_percentual, resultados_moeda)
 
                 # ✅ NOVO: Salva TODOS os horizontes dinamicamente
                 # Mapeia HORIZONTES para nomes de campo
@@ -1199,16 +1213,241 @@ class CryptoApp:
             print(f"[CRYPTO] Erro: {e}")
 
     def salvar_resultados_verificacao(self):
-        """Salva os resultados de verificação em JSON"""
+        """Salva os resultados de verificação em JSON (ACUMULA, não sobrescreve)"""
         if not hasattr(self, 'resultados_verificacao'):
             return
         
         import os
         os.makedirs("data/verificacoes", exist_ok=True)
         
-        for moeda, resultados in self.resultados_verificacao.items():
+        for moeda, resultados_novos in self.resultados_verificacao.items():
             arquivo = f"data/verificacoes/{moeda}.json"
+            
+            # ⭐ 1. Carrega dados ANTIGOS (se existirem)
+            dados_acumulados = {}
+            if os.path.exists(arquivo):
+                try:
+                    with open(arquivo, "r") as f:
+                        dados_acumulados = json.load(f)
+                except:
+                    dados_acumulados = {}
+            
+            # ⭐ 2. Soma os NOVOS resultados aos ANTIGOS
+            for h, novos in resultados_novos.items():
+                h_str = str(h)
+                if h_str in dados_acumulados:
+                    dados_acumulados[h_str]['acertos'] += novos['acertos']
+                    dados_acumulados[h_str]['erros'] += novos['erros']
+                    dados_acumulados[h_str]['total'] += novos['total']
+                else:
+                    dados_acumulados[h_str] = {
+                        'acertos': novos['acertos'],
+                        'erros': novos['erros'],
+                        'total': novos['total']
+                    }
+            
+            # ⭐ 3. Salva o ACUMULADO
             with open(arquivo, "w") as f:
-                # Converte as chaves para string (JSON não aceita int como chave)
-                resultados_str = {str(k): v for k, v in resultados.items()}
-                json.dump(resultados_str, f, indent=2)
+                json.dump(dados_acumulados, f, indent=2)
+        
+        # ⭐ 4. Zera os contadores em memória (pra não duplicar na próxima)
+        for moeda in self.resultados_verificacao:
+            for h in self.resultados_verificacao[moeda]:
+                self.resultados_verificacao[moeda][h] = {"acertos": 0, "erros": 0, "total": 0}
+        
+        print("[CRYPTO] 📊 Resultados acumulados salvos com sucesso")
+
+    def medir_risk_reward(self):
+        """Calcula o Risk/Reward real baseado nos dados de verificação"""
+        import json
+        import glob
+        import os
+        
+        print("\n" + "=" * 65)
+        print("📊 ANÁLISE DE RISK/REWARD POR HORIZONTE")
+        print("=" * 65)
+        
+        arquivos = glob.glob("data/verificacoes/*.json")
+        
+        if not arquivos:
+            print("❌ Nenhum arquivo de verificação encontrado.")
+            return
+        
+        for arquivo in arquivos:
+            moeda = os.path.basename(arquivo).replace(".json", "")
+            
+            with open(arquivo) as f:
+                dados = json.load(f)
+            
+            print(f"\n💰 {moeda.replace('USDT', '')}")
+            print(f"{'─' * 65}")
+            print(f"{'Horizonte':<8} {'Trades':<8} {'Acurácia':<10} {'R/R Mínimo':<12} {'Lucro 1:2?':<12} {'Lucro 1:3?':<12}")
+            print(f"{'─' * 65}")
+            
+            for h in ['5', '15', '30', '60', '300', '900', '1800', '3600']:
+                if h in dados and dados[h]['total'] > 50:
+                    d = dados[h]
+                    acertos = d['acertos']
+                    erros = d['erros']
+                    total = d['total']
+                    acuracia = round(acertos / total * 100, 1)
+                    
+                    # R/R mínimo para empatar
+                    if acertos > 0:
+                        rr_minimo = round(erros / acertos, 2)
+                    else:
+                        rr_minimo = float('inf')
+                    
+                    # Com R/R 1:2, lucra?
+                    # Precisamos de acurácia > 33.3% para lucrar com R/R 1:2
+                    lucro_1_2 = "✅ SIM" if acuracia > 33.3 else "❌ NÃO"
+                    
+                    # Com R/R 1:3, lucra?
+                    # Precisamos de acurácia > 25% para lucrar com R/R 1:3
+                    lucro_1_3 = "✅ SIM" if acuracia > 25 else "❌ NÃO"
+                    
+                    # Nome do horizonte
+                    h_int = int(h)
+                    if h_int < 60:
+                        nome_h = f"{h_int}s"
+                    elif h_int < 3600:
+                        nome_h = f"{h_int//60}min"
+                    else:
+                        nome_h = f"{h_int//3600}h"
+                    
+                    print(f"{nome_h:<8} {total:<8} {acuracia}%{'':<5} 1:{rr_minimo}{'':<8} {lucro_1_2:<12} {lucro_1_3:<12}")
+        
+        print(f"\n{'=' * 65}")
+        print("💡 R/R mínimo: o menor risco/recompensa para NÃO perder dinheiro")
+        print("💡 Se R/R mínimo é 1:0.8, você pode arriscar 1 pra ganhar 0.8 e ainda empatar")
+        print("💡 Se R/R mínimo é 1:1.2, você precisa arriscar 1 pra ganhar 1.2+ para lucrar")
+        print("💡 R/R 1:2 = arriscar R$100 pra ganhar R$200")
+        print("💡 Com 34% de acurácia + R/R 1:2 = LUCRO!")
+        print("=" * 65)
+
+    def verificar_e_enviar_sinal(self, moeda, preco, preds_percentual, resultados):
+        print(f"\n🔍 [DEBUG SINAL] Verificando {moeda}...")
+
+        horizontes_map = {
+            0: ("5s",   5),
+            1: ("15s",  15),
+            2: ("30s",  30),
+            3: ("1min", 60),
+            4: ("5min", 300),
+            5: ("15min",900),
+            6: ("30min",1800),
+            7: ("1h",   3600),
+            8: ("5h",   18000),
+            9: ("1d",   86400),
+        }
+
+        # ── Carrega histórico acumulado do disco e soma com RAM ──────────────────
+        arquivo = f"data/verificacoes/{moeda}.json"
+        resultados_merged = {}
+
+        # Copia RAM primeiro
+        for h_str, dados in resultados.items():
+            resultados_merged[str(h_str)] = {
+                "acertos": dados.get("acertos", 0),
+                "erros":   dados.get("erros",   0),
+                "total":   dados.get("total",   0),
+            }
+
+        # Soma com disco (histórico persistido)
+        if os.path.exists(arquivo):
+            try:
+                with open(arquivo, "r") as f:
+                    dados_disco = json.load(f)
+                for h_str, dados in dados_disco.items():
+                    if h_str in resultados_merged:
+                        resultados_merged[h_str]["acertos"] += dados.get("acertos", 0)
+                        resultados_merged[h_str]["erros"]   += dados.get("erros",   0)
+                        resultados_merged[h_str]["total"]   += dados.get("total",   0)
+                    else:
+                        resultados_merged[h_str] = {
+                            "acertos": dados.get("acertos", 0),
+                            "erros":   dados.get("erros",   0),
+                            "total":   dados.get("total",   0),
+                        }
+            except Exception as e:
+                print(f"[SINAL] ⚠️ Erro ao ler verificacoes/{moeda}.json: {e}")
+
+        # ── Avalia cada horizonte ────────────────────────────────────────────────
+        melhor_sinal = None
+        melhor_score = 0
+
+        for idx, (nome_h, h_segundos) in horizontes_map.items():
+            if idx >= len(preds_percentual):
+                continue
+
+            previsao = preds_percentual[idx]
+
+            # Bloqueio 1 corrigido: era 0.03 (bloqueava quase tudo), agora 0.001
+            if abs(previsao) < 0.3:
+                print(f"   [{nome_h}] ⏭ Previsão {previsao:.6f} abaixo do limiar mínimo")
+                continue
+
+            h_str = str(h_segundos)
+            dados_h = resultados_merged.get(h_str)
+            if dados_h is None:
+                print(f"   [{nome_h}] ❌ Horizonte {h_str}s não encontrado nos resultados")
+                continue
+
+            total   = dados_h.get("total",   0)
+            acertos = dados_h.get("acertos", 0)
+
+            # Bloqueio 2 corrigido: era 50, agora 5 para não travar bots novos
+            if total < 50:
+                print(f"   [{nome_h}] ⏳ Apenas {total} amostras — aguardando mínimo de 5")
+                continue
+
+            acuracia = (acertos / total) * 100
+
+            # Confiança mínima escalonada pelo volume de amostras
+           
+            if total < 200:
+                confianca_min = 60
+            elif total < 1000:
+                confianca_min = 55
+            elif total < 5000:
+                confianca_min = 54
+            else:
+                confianca_min = 53
+
+            print(f"   [{nome_h}] Total: {total} | Acertos: {acertos} | Acurácia: {acuracia:.1f}% | Mínimo: {confianca_min}%")
+
+            if acuracia < confianca_min:
+                print(f"   [{nome_h}] ❌ Acurácia insuficiente ({acuracia:.1f}% < {confianca_min}%)")
+                continue
+
+            score = abs(previsao) * (acuracia / 100)
+            print(f"   [{nome_h}] ✅ SINAL VÁLIDO! Score: {score:.4f}")
+
+            if score > melhor_score:
+                melhor_score = score
+                erros = total - acertos
+                pf    = acertos / erros if erros > 0 else float(acertos)
+
+                direcao = "ALTA" if previsao > 0 else "BAIXA"
+                alvo    = preco * (1.01  if direcao == "ALTA" else 0.99)
+                stop    = preco * (0.995 if direcao == "ALTA" else 1.005)
+
+                melhor_sinal = {
+                    "ativo":         moeda.replace("USDT", "/USDT"),
+                    "direcao":       direcao,
+                    "horizonte":     nome_h,
+                    "entrada":       preco,
+                    "alvo":          alvo,
+                    "stop":          stop,
+                    "acuracia":      round(acuracia, 1),
+                    "profit_factor": round(pf, 2),
+                }
+
+        # ── Envia o melhor sinal ─────────────────────────────────────────────────
+        if melhor_sinal:
+            mensagem = formatar_sinal(melhor_sinal)
+            enviar_sinal_telegram(TELEGRAM_TOKEN, CANAL_VIP_ID, mensagem)
+            print(f"[SINAL] 📤 Enviado: {melhor_sinal['ativo']} {melhor_sinal['direcao']} "
+                f"{melhor_sinal['horizonte']} (Score: {melhor_score:.4f})")
+        else:
+            print(f"[SINAL] 🔕 Nenhum horizonte passou os filtros para {moeda}")
