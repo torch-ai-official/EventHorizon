@@ -13,7 +13,8 @@ from concurrent.futures import ThreadPoolExecutor
 from Software.core.universe_instance import lock_universo
 from Software.core.mind_pytorch import MenteTorch, HORIZONTES, N_HORIZONTES
 from Software.core.mind_pytorch import DelayedRewardBuffer
-from telegram_sender import enviar_sinal_telegram, formatar_sinal
+from telegram_sender import enviar_sinal_telegram, formatar_sinal_pt, enviar_para_todos_canais
+from Software.core.sinal_engine import SignalEngine
 
 # Configurações do Bot
 TELEGRAM_TOKEN = "8898574077:AAFnKzYpum6CWiZgca4zgvAo6hB79qnT-rM"
@@ -222,6 +223,9 @@ class CryptoApp:
     nome = "crypto_app"
 
     def __init__(self, universo):
+        
+        self._signal_engine = SignalEngine(TELEGRAM_TOKEN)
+        
         self.universo      = universo
         self.ultimo_update = 0
         self.delay         = 2.0
@@ -559,6 +563,7 @@ class CryptoApp:
             # No update(), substitua esta parte:
 
             if mente is not None:
+                acc_por_horizonte = mente.accuracy_por_horizonte
                 preds_raw = mente.forward(features)
                 preds_percentual = [p * 5.0 for p in preds_raw]
                 preds_para_verificar = preds_percentual.copy()  # VALORES PUROS DA REDE
@@ -642,7 +647,16 @@ class CryptoApp:
                                     break
                             
                             if preco_alvo is None:
-                                preco_alvo = preco  # Fallback
+                                # Busca o preço mais próximo dentro de uma janela maior
+                                melhor_diff = float('inf')
+                                for v2 in self.verificacoes[moeda]:
+                                    diff = abs(v2["time"] - (v["time"] + horizonte))
+                                    if diff < melhor_diff and diff <= horizonte * 0.2:  # 20% de tolerância
+                                        melhor_diff = diff
+                                        preco_alvo = v2["price"]
+                                
+                                if preco_alvo is None:
+                                    continue  # ⭐ Pula em vez de usar fallback
                             
                             direcao_prevista = 1 if v["preds"][i] > 0 else -1
                             direcao_real = 1 if preco_alvo > v["price"] else -1
@@ -732,7 +746,13 @@ class CryptoApp:
 
                 if hasattr(self, 'resultados_verificacao'):
                     resultados_moeda = self.resultados_verificacao.get(moeda, {})
-                    self.verificar_e_enviar_sinal(moeda, preco, preds_percentual, resultados_moeda)
+                    self._signal_engine.avaliar(
+                        moeda, preco, preds_percentual,
+                        self.resultados_verificacao.get(moeda, {}),
+                        dado.get("regime", "ranging"),
+                        arquivo_disco=f"data/verificacoes/{moeda}.json",
+                       
+                    )
 
                 # ✅ NOVO: Salva TODOS os horizontes dinamicamente
                 # Mapeia HORIZONTES para nomes de campo
@@ -1325,129 +1345,4 @@ class CryptoApp:
         print("💡 Com 34% de acurácia + R/R 1:2 = LUCRO!")
         print("=" * 65)
 
-    def verificar_e_enviar_sinal(self, moeda, preco, preds_percentual, resultados):
-        print(f"\n🔍 [DEBUG SINAL] Verificando {moeda}...")
-
-        horizontes_map = {
-            0: ("5s",   5),
-            1: ("15s",  15),
-            2: ("30s",  30),
-            3: ("1min", 60),
-            4: ("5min", 300),
-            5: ("15min",900),
-            6: ("30min",1800),
-            7: ("1h",   3600),
-            8: ("5h",   18000),
-            9: ("1d",   86400),
-        }
-
-        # ── Carrega histórico acumulado do disco e soma com RAM ──────────────────
-        arquivo = f"data/verificacoes/{moeda}.json"
-        resultados_merged = {}
-
-        # Copia RAM primeiro
-        for h_str, dados in resultados.items():
-            resultados_merged[str(h_str)] = {
-                "acertos": dados.get("acertos", 0),
-                "erros":   dados.get("erros",   0),
-                "total":   dados.get("total",   0),
-            }
-
-        # Soma com disco (histórico persistido)
-        if os.path.exists(arquivo):
-            try:
-                with open(arquivo, "r") as f:
-                    dados_disco = json.load(f)
-                for h_str, dados in dados_disco.items():
-                    if h_str in resultados_merged:
-                        resultados_merged[h_str]["acertos"] += dados.get("acertos", 0)
-                        resultados_merged[h_str]["erros"]   += dados.get("erros",   0)
-                        resultados_merged[h_str]["total"]   += dados.get("total",   0)
-                    else:
-                        resultados_merged[h_str] = {
-                            "acertos": dados.get("acertos", 0),
-                            "erros":   dados.get("erros",   0),
-                            "total":   dados.get("total",   0),
-                        }
-            except Exception as e:
-                print(f"[SINAL] ⚠️ Erro ao ler verificacoes/{moeda}.json: {e}")
-
-        # ── Avalia cada horizonte ────────────────────────────────────────────────
-        melhor_sinal = None
-        melhor_score = 0
-
-        for idx, (nome_h, h_segundos) in horizontes_map.items():
-            if idx >= len(preds_percentual):
-                continue
-
-            previsao = preds_percentual[idx]
-
-            # Bloqueio 1 corrigido: era 0.03 (bloqueava quase tudo), agora 0.001
-            if abs(previsao) < 0.3:
-                print(f"   [{nome_h}] ⏭ Previsão {previsao:.6f} abaixo do limiar mínimo")
-                continue
-
-            h_str = str(h_segundos)
-            dados_h = resultados_merged.get(h_str)
-            if dados_h is None:
-                print(f"   [{nome_h}] ❌ Horizonte {h_str}s não encontrado nos resultados")
-                continue
-
-            total   = dados_h.get("total",   0)
-            acertos = dados_h.get("acertos", 0)
-
-            # Bloqueio 2 corrigido: era 50, agora 5 para não travar bots novos
-            if total < 50:
-                print(f"   [{nome_h}] ⏳ Apenas {total} amostras — aguardando mínimo de 5")
-                continue
-
-            acuracia = (acertos / total) * 100
-
-            # Confiança mínima escalonada pelo volume de amostras
-           
-            if total < 200:
-                confianca_min = 60
-            elif total < 1000:
-                confianca_min = 55
-            elif total < 5000:
-                confianca_min = 54
-            else:
-                confianca_min = 53
-
-            print(f"   [{nome_h}] Total: {total} | Acertos: {acertos} | Acurácia: {acuracia:.1f}% | Mínimo: {confianca_min}%")
-
-            if acuracia < confianca_min:
-                print(f"   [{nome_h}] ❌ Acurácia insuficiente ({acuracia:.1f}% < {confianca_min}%)")
-                continue
-
-            score = abs(previsao) * (acuracia / 100)
-            print(f"   [{nome_h}] ✅ SINAL VÁLIDO! Score: {score:.4f}")
-
-            if score > melhor_score:
-                melhor_score = score
-                erros = total - acertos
-                pf    = acertos / erros if erros > 0 else float(acertos)
-
-                direcao = "ALTA" if previsao > 0 else "BAIXA"
-                alvo    = preco * (1.01  if direcao == "ALTA" else 0.99)
-                stop    = preco * (0.995 if direcao == "ALTA" else 1.005)
-
-                melhor_sinal = {
-                    "ativo":         moeda.replace("USDT", "/USDT"),
-                    "direcao":       direcao,
-                    "horizonte":     nome_h,
-                    "entrada":       preco,
-                    "alvo":          alvo,
-                    "stop":          stop,
-                    "acuracia":      round(acuracia, 1),
-                    "profit_factor": round(pf, 2),
-                }
-
-        # ── Envia o melhor sinal ─────────────────────────────────────────────────
-        if melhor_sinal:
-            mensagem = formatar_sinal(melhor_sinal)
-            enviar_sinal_telegram(TELEGRAM_TOKEN, CANAL_VIP_ID, mensagem)
-            print(f"[SINAL] 📤 Enviado: {melhor_sinal['ativo']} {melhor_sinal['direcao']} "
-                f"{melhor_sinal['horizonte']} (Score: {melhor_score:.4f})")
-        else:
-            print(f"[SINAL] 🔕 Nenhum horizonte passou os filtros para {moeda}")
+    
