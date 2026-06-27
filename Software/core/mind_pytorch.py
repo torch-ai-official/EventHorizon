@@ -591,12 +591,6 @@ class MenteTorch(nn.Module):
     # ─────────────────────────────────────────────────────────────────────────
 
     def aprender_horizonte(self, i: int, recompensa: float):
-        """
-        Recebe a recompensa REAL de um único horizonte (quando o tempo passou)
-        e treina apenas a cabeça correspondente.
-
-        Atualiza n_acertos / n_erros com o dado real.
-        """
         if self.ultima_entrada is None or self._ultimos_x_cabecas is None:
             return
         if math.isnan(recompensa) or math.isinf(recompensa):
@@ -604,12 +598,14 @@ class MenteTorch(nn.Module):
         if not (0 <= i < N_HORIZONTES):
             return
 
-        self._passo_gradiente([recompensa], [i])
-
-        # Atualiza métricas com sinal real
-        x_i = self._ultimos_x_cabecas[i]
+        # ✅ Lê predição ANTES de treinar
+        x_i = self._ultimos_x_cabecas[i].detach()
         with torch.no_grad():
             pred = float(self.cabecas[i](x_i).item())
+
+        self._passo_gradiente([recompensa], [i])
+
+        # Agora compara predição pré-treino com realidade
         if (pred > 0) == (recompensa > 0):
             self.n_acertos[i] += 1
         else:
@@ -626,10 +622,15 @@ class MenteTorch(nn.Module):
         """
         self.otimizador.zero_grad()
 
-        x = self.ultima_entrada
-        preds_lista = [self.cabecas[i](self._ultimos_x_cabecas[i]) for i in indices]
-        preds = torch.cat(preds_lista, dim=1)                        # [1, n]
-        alvo  = torch.tensor([recompensas], dtype=torch.float32)     # [1, n]
+        # ← MUDANÇA: recalcula o forward das cabeças com detach() + requires_grad
+        #   em vez de reusar os tensores do grafo anterior (já liberado)
+        preds_lista = []
+        for i in indices:
+            x = self._ultimos_x_cabecas[i].detach().requires_grad_(True)
+            preds_lista.append(self.cabecas[i](x))
+
+        preds = torch.cat(preds_lista, dim=1)
+        alvo  = torch.tensor([recompensas], dtype=torch.float32)
 
         if preds.shape != alvo.shape:
             return
@@ -658,13 +659,19 @@ class MenteTorch(nn.Module):
             for p in self.cabecas[i].parameters()
         ) * 1e-5
 
-        loss = (loss_huber  * 0.45 +
+        # Dentro de _passo_gradiente, após calcular loss_huber/mse/mae:
+
+        # Penaliza outputs muito próximos de zero (anti-colapso)
+        loss_entropy = -torch.mean(torch.abs(preds) + 1e-6).log()
+
+        loss = (loss_huber  * 0.40 +
                 loss_mse    * 0.15 +
                 loss_mae    * 0.10 +
                 loss_conf   * 0.10 +
                 loss_consist * 0.10 +
                 loss_vol    * 0.05 +
-                loss_reg    * 0.05)
+                loss_reg    * 0.05 +
+                loss_entropy * 0.05)   # ← novo termo
 
         loss.backward()
 

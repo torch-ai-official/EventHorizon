@@ -25,6 +25,38 @@ from Software.apps.chatbot_app import ChatBotApp
 from fastapi.staticfiles import StaticFiles
 chatbot_app = ChatBotApp(universo)
 
+def calcular_acuracia_janela(vrf_h: dict, janela: int = 0) -> dict:
+    """
+    Calcula acurácia de um horizonte.
+    janela=0 → acumulado total
+    janela>0 → últimos N do historico item-a-item (se disponível)
+    """
+    total = vrf_h.get('total', 0)
+    acertos = vrf_h.get('acertos', 0)
+    historico = vrf_h.get('historico', [])
+
+    if janela > 0 and len(historico) >= 10:
+        ultimos = historico[-janela:]
+        n = len(ultimos)
+        ac = sum(ultimos)
+        return {
+            'acertos': ac,
+            'erros': n - ac,
+            'total': n,
+            'acuracia': round(ac / n * 100, 1),
+            'fonte': 'janela_real'
+        }
+
+    # Fallback: acumulado
+    if total == 0:
+        return None
+    return {
+        'acertos': acertos,
+        'erros': total - acertos,
+        'total': total,
+        'acuracia': round(acertos / total * 100, 1),
+        'fonte': 'acumulado'
+    }
 
 universo.apps = [DataApp(universo), PulseApp(universo), TimeApp(universo), SystemApp(universo, estado), BalanceApp(universo), FlowApp(universo), CryptoApp(universo)]
 app = FastAPI()
@@ -255,13 +287,10 @@ async def dashboard_realtime():
             with open(f"data/verificacoes/{moeda}.json") as f:
                 vrf = json.load(f)
             for h in ['5','15','30','60','300','900','1800','3600']:
-                if h in vrf and vrf[h]['total'] > 10:
-                    acuracias_reais[h] = {
-                        'acertos': vrf[h]['acertos'],
-                        'erros': vrf[h]['erros'],
-                        'total': vrf[h]['total'],
-                        'acuracia': round(vrf[h]['acertos']/vrf[h]['total']*100, 1)
-                    }
+                if h in vrf and vrf[h].get('total', 0) > 10:
+                    resultado = calcular_acuracia_janela(vrf[h], janela=0)  # acumulado
+                    if resultado:
+                        acuracias_reais[h] = resultado
         except:
             pass
         

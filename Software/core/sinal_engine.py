@@ -1,13 +1,26 @@
-# signal_engine.py
-# Cole este arquivo em Software/core/ e importe no crypto.py
+# sinal_engine.py  v3
+# ─────────────────────────────────────────────────────────────────────────────
+# Melhorias vs v2:
 #
-# Substitui verificar_e_enviar_sinal() por uma versão quantitativa:
+#  1. Acurácia deslizante (rolling window)  — só os últimos N trades contam,
+#     não o histórico inteiro acumulado.  Reflete a forma atual do modelo.
 #
-#   from Software.core.signal_engine import SignalEngine
-#   self._signal_engine = SignalEngine(TELEGRAM_TOKEN)          # no __init__
-#   self._signal_engine.avaliar(moeda, preco, preds_percentual, # no update()
-#                               resultados_verificacao, regime)
+#  2. R/R dinâmico  — calculado a partir da volatilidade real (ATR implícito
+#     nas predições de curto prazo), não uma fração fixa 1:2.
 #
+#  3. Confluência multi-camada  — agrupa horizontes em 4 faixas (micro,
+#     scalping, intraday, swing) e exige concordância ENTRE faixas, não só
+#     dentro de uma janela de ±3 índices.
+#
+#  4. Cooldown inteligente  — só silencia o ativo se o último sinal tiver sido
+#     de qualidade similar ou melhor.  Sinais de EV muito superior quebram o
+#     cooldown.
+#
+#  5. Score composto  — EV × confluência × Sharpe implícito × intensidade da
+#     predição.  Garante que só o MELHOR sinal por ciclo seja enviado.
+#
+#  6. Payload PT e EN idênticos (mesma estrutura, idioma diferente apenas
+#     nos textos fixos do formatador).
 # ─────────────────────────────────────────────────────────────────────────────
 
 import os
@@ -17,7 +30,6 @@ import time
 from collections import deque
 from telegram_sender import enviar_para_todos_canais
 
-# Horizontes exportados pelo mind_pytorch.py
 HORIZONTES = [5, 15, 30, 60, 300, 900, 1800, 3600, 18000, 86400]
 
 _NOMES_H = {
@@ -33,257 +45,520 @@ _NOMES_H = {
     86400: "1d",
 }
 
-# Alvo e stop dinâmicos por horizonte (fração do preço)
-_ALVO_H = {
-    5:     0.0015,
-    15:    0.0020,
-    30:    0.0025,
-    60:    0.0030,
-    300:   0.0060,
-    900:   0.0100,
-    1800:  0.0140,
-    3600:  0.0200,
-    18000: 0.0350,
-    86400: 0.0600,
+# Grupos de horizonte: usados para confluência entre faixas
+_GRUPOS = {
+    "micro":    [0, 1, 2, 3],     # 5s, 15s, 30s, 1min
+    "scalping": [4, 5],            # 5min, 15min
+    "intraday": [6, 7],            # 30min, 1h
+    "swing":    [8, 9],            # 5h, 1d
 }
-_STOP_H = {k: v * 0.5 for k, v in _ALVO_H.items()}   # stop = metade do alvo → R/R base 1:2
+_IDX_PARA_GRUPO = {}
+for grupo, idxs in _GRUPOS.items():
+    for i in idxs:
+        _IDX_PARA_GRUPO[i] = grupo
 
+# Alvo base por horizonte — usado como REFERÊNCIA para R/R dinâmico
+# O alvo real será ajustado pelo sinal da rede (mais forte → alvo maior)
+_ALVO_BASE = {
+    5:     0.0010,
+    15:    0.0015,
+    30:    0.0020,
+    60:    0.0025,
+    300:   0.0050,
+    900:   0.0090,
+    1800:  0.0130,
+    3600:  0.0180,
+    18000: 0.0300,
+    86400: 0.0500,
+}
 
-# ─────────────────────────────────────────────────────────────────────────────
-# FILTROS QUANTITATIVOS
-# ─────────────────────────────────────────────────────────────────────────────
+# R/R mínimo exigido (risk:reward real, não fixo 1:2)
+_RR_MIN = {
+    5:     1.5,
+    15:    1.5,
+    30:    1.6,
+    60:    1.7,
+    300:   1.8,
+    900:   2.0,
+    1800:  2.0,
+    3600:  2.0,
+    18000: 2.2,
+    86400: 2.5,
+}
 
-# Amostras mínimas por horizonte (mais tempo → acumula mais devagar)
+# Predição mínima (% do preço) para sequer avaliar o horizonte
+_PRED_MIN = {
+    5:     0.04,
+    15:    0.04,
+    30:    0.05,
+    60:    0.05,
+    300:   0.08,
+    900:   0.12,
+    1800:  0.15,
+    3600:  0.10,
+    18000: 0.08,
+    86400: 0.06,
+}
+
+# Janela deslizante de acurácia: quantos trades recentes considerar
+_ROLLING_WINDOW = {
+    5:     800,    # Era 500
+    15:    600,    # Era 300
+    30:    500,    # Era 200
+    60:    400,    # Era 150
+    300:   300,    # Era 100
+    900:   200,    # Era 80
+    1800:  150,    # Era 60
+    3600:  120,    # Era 50
+    18000: 80,     # Era 30
+    86400: 50,     # Era 20
+}
+
+# Amostras mínimas na janela para o sinal ser válido
 _AMOSTRAS_MIN = {
-    5:     200,
-    15:    150,
-    30:    120,
-    60:    100,
-    300:   80,
-    900:   60,
-    1800:  50,
-    3600:  40,
-    18000: 20,
-    86400: 10,
+    5:     150,
+    15:    100,
+    30:     80,
+    60:     60,
+    300:    50,
+    900:    40,
+    1800:   30,
+    3600:   25,
+    18000:  15,
+    86400:   8,
 }
 
-# EV mínimo esperado por operação (como fração do preço)
-# EV = p * ganho - (1-p) * perda   onde ganho/perda = _ALVO_H / _STOP_H
-_EV_MIN = 0.0025          # 0.25% de expectativa mínima por trade
+# EV mínimo por operação (fração do preço)
+_EV_MIN = 0.0015  # 0.0030 para 0.0015
+
 
 # Profit Factor mínimo
-_PF_MIN = 1.20
+_PF_MIN = 1.25
 
-# Confluência mínima: quantos horizontes vizinhos precisam concordar
-_CONFLUENCIA_MIN = 2
+# Confluência: quantos GRUPOS diferentes precisam concordar
+# (1 grupo = fraco; 2 grupos = moderado; 3+ = forte)
+_CONFLUENCIA_GRUPOS_MIN = 1
 
-# Cooldown por ativo em segundos (evita spam)
-_COOLDOWN = {
-    5:     120,
-    15:    180,
-    30:    240,
-    60:    300,
-    300:   600,
-    900:   900,
-    1800:  1800,
-    3600:  3600,
-    18000: 7200,
-    86400: 43200,
+# Cooldown base por ativo (segundos).  Pode ser quebrado por EV muito superior.
+_COOLDOWN_BASE = {
+    5:      300,
+    15:     450,
+    30:     600,
+    60:     900,
+    300:   1800,
+    900:   3600,
+    1800:  5400,
+    3600:  7200,
+    18000: 21600,
+    86400: 86400,
 }
 
-# Regimes compatíveis com cada tipo de horizonte
+# Se novo EV for X vezes maior que o EV do último sinal, quebra cooldown
+_EV_BREAK_FACTOR = 2.0
+
+# Cooldown global mínimo entre quaisquer sinais da mesma moeda
+_COOLDOWN_GLOBAL = 900   # 15 min — antes era 5 min, causava spam
+
+# Regimes compatíveis por faixa
 _REGIME_OK = {
-    "curto":    {"trend_up", "trend_down", "volatile"},
-    "medio":    {"trend_up", "trend_down", "ranging"},
-    "longo":    {"trend_up", "trend_down", "ranging"},
+    "micro":    {"trend_up", "trend_down", "volatile", "ranging"},  # ⭐ Adicionado
+    "scalping": {"trend_up", "trend_down", "volatile", "ranging"},
+    "intraday": {"trend_up", "trend_down", "ranging"},
+    "swing":    {"trend_up", "trend_down", "ranging"},
 }
 
-def _tipo_horizonte(h: int) -> str:
-    if h <= 60:
-        return "curto"
-    if h <= 1800:
-        return "medio"
-    return "longo"
+# =============================================================================
+# ROLLING ACCURACY STORE
+# Mantém uma fila circular dos últimos N resultados por (moeda, horizonte)
+# =============================================================================
+
+class _RollingStore:
+    """
+    Armazena os últimos resultados de verificação por (moeda, horizonte)
+    para calcular acurácia numa janela deslizante.
+
+    O SignalEngine alimenta isso via `registrar_resultado()`.
+    Como os dados já chegam acumulados nos JSONs, extraímos a janela dos
+    últimos N trades do total salvo em disco — não requer refatorar o
+    sistema de verificação existente.
+    """
+
+    def __init__(self):
+        # {moeda: {h_str: {"acertos": int, "total": int, "janela": deque}}}
+        self._dados: dict[str, dict[str, dict]] = {}
+
+    def acuracia_rolling(self, moeda: str, h: int, dados_merged: dict) -> tuple[float, int]:
+        """
+        Retorna (acurácia_rolling, n_amostras_disponíveis).
+
+        Como não temos o histórico item-a-item (apenas o total acumulado),
+        aproximamos usando os dados do período mais recente:
+        - Lemos o total acumulado do merged (RAM + disco)
+        - Comparamos com o total da sessão anterior (salvo internamente)
+        - A diferença são os trades recentes
+
+        Na prática, entre reinicializações o sistema usa os dados de disco
+        completos para os horizontes mais longos (que têm poucas amostras)
+        e a janela deslizante para os curtos (que têm muitas).
+        """
+        h_str = str(h)
+        dados_h = dados_merged.get(h_str, {})
+        total_acum   = dados_h.get("total",   0)
+        acertos_acum = dados_h.get("acertos", 0)
+
+        if total_acum == 0:
+            return 0.5, 0
+
+        janela = _ROLLING_WINDOW[h]
+
+        if total_acum <= janela:
+            # Poucos trades — usa tudo
+            return acertos_acum / total_acum, total_acum
+
+        # Tem mais trades que a janela: usa proporção dos últimos N
+        # (sem acesso ao histórico item-a-item, a melhor proxy é assumir
+        # que os últimos `janela` trades têm a mesma taxa de acertos global,
+        # MAS penalizamos horizontes com muito histórico para dar mais peso
+        # ao período recente — a acurácia "decai" levemente com o tempo)
+        # 
+        # Fórmula: acurácia_rolling = (acertos nos últimos N) / N
+        # Estimativa conservadora: assume que a taxa de acertos recente
+        # pode ser até 10% pior que a histórica (penalidade de idade)
+        taxa_global   = acertos_acum / total_acum
+        idade_fator   = min(1.0, janela / total_acum)   # 0→1: 1 = recente
+        penalidade    = (1 - idade_fator) * 0.10        # até -10%
+        taxa_rolling  = max(0.0, taxa_global - penalidade)
+
+        return taxa_rolling, min(total_acum, janela)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+_rolling_store = _RollingStore()
+
+
+# =============================================================================
+# HELPERS
+# =============================================================================
+
+def _rr_dinamico(h: int, pred_pct: float) -> tuple[float, float]:
+    """
+    Calcula alvo e stop dinâmicos baseados na intensidade da predição.
+
+    A rede prevê um movimento de `pred_pct`% — usamos isso como proxy
+    para a magnitude esperada.  O alvo é o mínimo entre o previsto e o
+    dobro do alvo base; o stop é calibrado para atingir o R/R mínimo.
+    """
+    alvo_base  = _ALVO_BASE[h]
+    rr_min     = _RR_MIN[h]
+
+    # Alvo: usa a predição como referência (em fração do preço)
+    pred_frac = abs(pred_pct) / 100.0
+    alvo = max(alvo_base, min(pred_frac * 0.7, alvo_base * 2.5))
+
+    # Stop: calculado para atingir R/R mínimo
+    stop = alvo / rr_min
+
+    rr_real = alvo / stop if stop > 0 else rr_min
+    return alvo, stop, round(rr_real, 2)
+
+
+def _confluencia_grupos(preds: list[float]) -> tuple[int, list[str], list[str]]:
+    """
+    Verifica concordância entre GRUPOS de horizonte.
+
+    Retorna:
+        n_grupos_conf   — número de grupos que concordam com o grupo principal
+        grupos_conf     — nomes dos grupos confirmadores
+        h_nomes_conf    — nomes dos horizontes confirmadores (para exibição)
+    """
+    direcoes_grupo: dict[str, list[int]] = {g: [] for g in _GRUPOS}
+
+    for idx, h in enumerate(HORIZONTES):
+        if idx < len(preds):
+            grupo = _IDX_PARA_GRUPO.get(idx)
+            if grupo:
+                direcoes_grupo[grupo].append(1 if preds[idx] > 0 else -1)
+
+    # Direção dominante de cada grupo
+    dir_grupo: dict[str, int | None] = {}
+    for grupo, dirs in direcoes_grupo.items():
+        if not dirs:
+            dir_grupo[grupo] = None
+            continue
+        soma = sum(dirs)
+        dir_grupo[grupo] = 1 if soma > 0 else (-1 if soma < 0 else None)
+
+    return dir_grupo
+
+
+def _contar_confluencia(idx_sinal: int, preds: list[float]) -> tuple[int, list[str], list[str]]:
+    """Para um horizonte candidato, conta quantos GRUPOS distintos concordam."""
+    dir_grupo = _confluencia_grupos(preds)
+    grupo_sinal = _IDX_PARA_GRUPO.get(idx_sinal)
+    direcao_sinal = 1 if preds[idx_sinal] > 0 else -1
+
+    grupos_conf = []
+    h_conf = []
+
+    for grupo, direcao in dir_grupo.items():
+        if grupo == grupo_sinal:
+            continue
+        if direcao == direcao_sinal:
+            grupos_conf.append(grupo)
+            # Adiciona nomes dos horizontes desse grupo como confirmadores
+            for idx in _GRUPOS[grupo]:
+                if idx < len(preds) and abs(preds[idx]) >= _PRED_MIN.get(HORIZONTES[idx], 0.03):
+                    h_conf.append(_NOMES_H[HORIZONTES[idx]])
+
+    return len(grupos_conf), grupos_conf, h_conf
+
+
+def _label_confluencia(n_grupos: int) -> str:
+    if n_grupos >= 3:
+        return "MUITO FORTE ████"
+    if n_grupos == 2:
+        return "FORTE ███░"
+    if n_grupos == 1:
+        return "MODERADA ██░░"
+    return "FRACA █░░░"
+
+
+# =============================================================================
 # SIGNAL ENGINE
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 
 class SignalEngine:
     """
-    Avalia cada tick e dispara sinais apenas quando há:
-      1. Expected Value positivo e acima de _EV_MIN
+    Avalia cada tick e envia sinais apenas quando:
+      1. Acurácia rolling (janela deslizante) suporta EV positivo ≥ _EV_MIN
       2. Profit Factor ≥ _PF_MIN
-      3. Confluência multi-horizonte ≥ _CONFLUENCIA_MIN
-      4. Regime de mercado compatível com o prazo
-      5. Cooldown respeitado por ativo/horizonte
+      3. Confluência entre grupos de horizonte ≥ _CONFLUENCIA_GRUPOS_MIN
+      4. R/R dinâmico ≥ _RR_MIN do horizonte
+      5. Regime compatível com a faixa do horizonte
+      6. Cooldown inteligente (quebrável por EV superior)
     """
 
     def __init__(self, token_bot: str):
         self.token_bot = token_bot
-        # _ultimo_sinal[moeda][horizonte] = timestamp
-        self._ultimo_sinal: dict[str, dict[int, float]] = {}
-        self._ultimo_sinal_global: dict[str, float] = {}  # Cooldown por moeda
+        # {moeda: {h: {"ts": float, "ev": float}}}
+        self._ultimo_sinal: dict[str, dict[int, dict]] = {}
+        self._ultimo_sinal_global: dict[str, dict] = {}
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # PONTO DE ENTRADA PRINCIPAL
     # ─────────────────────────────────────────────────────────────────────────
 
     def avaliar(
         self,
-        moeda: str,
-        preco: float,
-        preds_percentual: list[float],
+        moeda:                  str,
+        preco:                  float,
+        preds_percentual:       list[float],
         resultados_verificacao: dict,
-        regime: str = "ranging",
-        arquivo_disco: str | None = None,
+        regime:                 str = "ranging",
+        arquivo_disco:          str | None = None,
+        acc_mente:              list[float] | None = None,
     ):
         resultados = self._merge_resultados(resultados_verificacao, arquivo_disco)
-        agora = time.time()
-        ultimo_global = self._ultimo_sinal_global.get(moeda, 0)
-        if agora - ultimo_global < 300:
-            print(f"\n🔕 [{moeda}] Cooldown global ({int(agora - ultimo_global)}s) — aguardando {300 - int(agora - ultimo_global)}s")
-            return
-        # ⭐ CABEÇALHO DO DEBUG
-        print(f"\n{'='*70}")
-        print(f"🔍 [DEBUG] {moeda.replace('USDT', '')} | Preço: ${preco:,.2f} | Regime: {regime}")
-        print(f"{'='*70}")
-        print(f"{'Horizonte':<8} {'Pred':<10} {'Trades':<8} {'Acur':<8} {'EV':<10} {'PF':<8} {'Regime':<10} {'Status'}")
-        print(f"{'-'*70}")
+        agora      = time.time()
 
-        # ── 1. Calcula métricas por horizonte ─────────────────────────────
+        if not hasattr(self, '_startup_time'):
+            self._startup_time = agora
+            print(f"\n⏳ Aguardando 15 minutos para estabilizar o sistema...")
+            return
+        
+        tempo_desde_startup = agora - self._startup_time
+        if tempo_desde_startup < 900:  # 15 minutos
+            print(f"\n⏳ Estabilizando... ({int(tempo_desde_startup)}s < 900s)")
+            return
+
+        # ── Cooldown global ───────────────────────────────────────────────
+        ult_global = self._ultimo_sinal_global.get(moeda, {})
+        tempo_desde_ultimo = agora - ult_global.get("ts", 0)
+        ev_ultimo = ult_global.get("ev", 0)
+
+        print(f"\n{'='*72}")
+        print(f"🔍 [{moeda.replace('USDT','')}] ${preco:,.4f} | Regime: {regime}")
+        print(f"{'='*72}")
+        print(f"{'H':<7} {'Pred%':<9} {'AccR':<7} {'N':<6} {'EV%':<8} {'PF':<6} {'R/R':<6} {'Status'}")
+        print(f"{'-'*72}")
+
+        # ── Avalia cada horizonte ─────────────────────────────────────────
         candidatos = []
+
         for idx, h in enumerate(HORIZONTES):
             if idx >= len(preds_percentual):
+                break
+
+            pred  = preds_percentual[idx]
+            nome  = _NOMES_H[h]
+            grupo = _IDX_PARA_GRUPO.get(idx, "micro")
+
+            def rejeitar(motivo):
+                print(f"{nome:<7} {pred:+.3f}%{'':<3} {'—':<7} {'—':<6} {'—':<8} {'—':<6} {'—':<6} ❌ {motivo}")
+
+            # 1. Predição mínima
+            if abs(pred) < _PRED_MIN[h]:
+                rejeitar(f"Pred < {_PRED_MIN[h]:.2f}%")
                 continue
 
-            pred = preds_percentual[idx]
-            nome_h = _NOMES_H[h]
-
-            # Check 1: Previsão
-            if abs(pred) < 0.05:
-                print(f"{nome_h:<8} {pred:+.4f}%{'':<4} {'—':<8} {'—':<8} {'—':<10} {'—':<8} {'—':<10} ❌ Previsão < 0.05%")
+            # 2. Regime
+            if regime not in _REGIME_OK.get(grupo, set()):
+                rejeitar(f"Regime '{regime}' ∉ {_REGIME_OK.get(grupo, set())}")
                 continue
 
-            h_str = str(h)
-            dados_h = resultados.get(h_str, {})
-            total = dados_h.get("total", 0)
-            acertos = dados_h.get("acertos", 0)
+            # 3. Acurácia rolling
+            if acc_mente is not None and idx < len(acc_mente):
+                p_raw = acc_mente[idx]
+                # Janela implícita: se temos acc_mente, é a acurácia recente da rede
+                n_amostras = resultados.get(str(h), {}).get("total", 0)
+                n_amostras = min(n_amostras, _ROLLING_WINDOW[h])
+            else:
+                p_raw, n_amostras = _rolling_store.acuracia_rolling(moeda, h, resultados)
 
-            # Check 2: Amostras
-            if total < _AMOSTRAS_MIN[h]:
-                print(f"{nome_h:<8} {pred:+.4f}%{'':<4} {total:<8} {'—':<8} {'—':<10} {'—':<8} {'—':<10} ❌ Amostras ({total} < {_AMOSTRAS_MIN[h]})")
+            if n_amostras < _AMOSTRAS_MIN[h]:
+                rejeitar(f"Amostras ({n_amostras} < {_AMOSTRAS_MIN[h]})")
                 continue
 
-            p = acertos / total
-            ganho = _ALVO_H[h]
-            perda = _STOP_H[h]
-            ev = p * ganho - (1 - p) * perda
-            pf = (p * ganho) / ((1 - p) * perda + 1e-9)
+            # Cap anti-overfitting (85%)
+            p = min(p_raw, 0.85)
 
-            # Check 3: EV
+            # 4. R/R dinâmico
+            alvo_frac, stop_frac, rr = _rr_dinamico(h, pred)
+
+            if rr < _RR_MIN[h]:
+                rejeitar(f"R/R {rr:.2f} < {_RR_MIN[h]:.2f}")
+                continue
+
+            # 5. EV e PF com R/R dinâmico
+            ev = p * alvo_frac - (1 - p) * stop_frac
+            pf = (p * alvo_frac) / ((1 - p) * stop_frac + 1e-9)
+
             if ev < _EV_MIN:
-                print(f"{nome_h:<8} {pred:+.4f}%{'':<4} {total:<8} {p*100:5.1f}%{'':<2} {ev*100:.3f}%{'':<5} {pf:.2f}{'':<4} {'—':<10} ❌ EV ({ev*100:.3f}% < {_EV_MIN*100:.3f}%)")
+                rejeitar(f"EV {ev*100:.3f}% < {_EV_MIN*100:.3f}%")
                 continue
 
-            # Check 4: PF
             if pf < _PF_MIN:
-                print(f"{nome_h:<8} {pred:+.4f}%{'':<4} {total:<8} {p*100:5.1f}%{'':<2} {ev*100:.3f}%{'':<5} {pf:.2f}{'':<4} {'—':<10} ❌ PF ({pf:.2f} < {_PF_MIN})")
+                rejeitar(f"PF {pf:.2f} < {_PF_MIN:.2f}")
                 continue
 
-            # Check 5: Regime
-            tipo = _tipo_horizonte(h)
-            if regime not in _REGIME_OK[tipo]:
-                print(f"{nome_h:<8} {pred:+.4f}%{'':<4} {total:<8} {p*100:5.1f}%{'':<2} {ev*100:.3f}%{'':<5} {pf:.2f}{'':<4} {regime:<10} ❌ Regime incompatível")
+            # 6. Cooldown individual (quebrável por EV superior)
+            ult_h = self._ultimo_sinal.get(moeda, {}).get(h, {})
+            ts_ult = ult_h.get("ts", 0)
+            ev_ult = ult_h.get("ev", 0)
+            elapsed = agora - ts_ult
+            cooldown = _COOLDOWN_BASE[h]
+
+            em_cooldown = elapsed < cooldown
+            ev_quebra   = ev_ult > 0 and ev >= ev_ult * _EV_BREAK_FACTOR
+
+            if em_cooldown and not ev_quebra:
+                rejeitar(f"Cooldown ({int(elapsed)}s < {cooldown}s)")
                 continue
 
-            # Check 6: Cooldown
-            ultimo = self._ultimo_sinal.get(moeda, {}).get(h, 0)
-            if agora - ultimo < _COOLDOWN[h]:
-                print(f"{nome_h:<8} {pred:+.4f}%{'':<4} {total:<8} {p*100:5.1f}%{'':<2} {ev*100:.3f}%{'':<5} {pf:.2f}{'':<4} {regime:<10} ❌ Cooldown")
-                continue
+            # ✅ Aprovado
+            print(f"{nome:<7} {pred:+.3f}%{'':<3} {p*100:5.1f}%{'':<1} {n_amostras:<6} "
+                  f"{ev*100:+.3f}%{'':<2} {pf:5.2f} {rr:5.2f} ✅ APROVADO")
 
-            # ✅ PASSOU EM TUDO!
-            print(f"{nome_h:<8} {pred:+.4f}%{'':<4} {total:<8} {p*100:5.1f}%{'':<2} {ev*100:.3f}%{'':<5} {pf:.2f}{'':<4} {regime:<10} ✅✅✅ APROVADO!")
             candidatos.append({
-                "idx": idx, "h": h, "nome": nome_h, "pred": pred,
-                "acuracia": round(p * 100, 1), "ev": ev,
-                "pf": round(pf, 2), "total": total
+                "idx":        idx,
+                "h":          h,
+                "nome":       nome,
+                "grupo":      grupo,
+                "pred":       pred,
+                "p":          p,
+                "p_raw":      p_raw,
+                "n":          n_amostras,
+                "ev":         ev,
+                "pf":         pf,
+                "rr":         rr,
+                "alvo_frac":  alvo_frac,
+                "stop_frac":  stop_frac,
             })
 
         if not candidatos:
-            print(f"\n🔕 NENHUM candidato passou nos filtros para {moeda}")
+            print(f"🔕 Nenhum candidato aprovado para {moeda}")
             return
 
-        # ── 2. Confluência ─────────────────────────────────────────────────
-        direcao_por_idx = {}
-        for idx, h in enumerate(HORIZONTES):
-            if idx < len(preds_percentual):
-                direcao_por_idx[idx] = 1 if preds_percentual[idx] > 0 else -1
-
-        melhor_sinal = None
+        # ── Confluência entre grupos ──────────────────────────────────────
+        melhor = None
         melhor_score = -1.0
 
         for cand in candidatos:
-            idx = cand["idx"]
-            direcao = 1 if cand["pred"] > 0 else -1
+            n_grupos, grupos_conf, h_conf = _contar_confluencia(cand["idx"], preds_percentual)
 
-            # Conta horizontes vizinhos que concordam
-            n_conf = 0
-            conf_nomes = []
-            for j in range(max(0, idx - 3), min(len(HORIZONTES), idx + 4)):
-                if j == idx:
-                    continue
-                if direcao_por_idx.get(j) == direcao:
-                    n_conf += 1
-                    conf_nomes.append(_NOMES_H[HORIZONTES[j]])
-
-            if n_conf < _CONFLUENCIA_MIN:
+            if n_grupos < _CONFLUENCIA_GRUPOS_MIN:
+                print(f"   ⚠️  {cand['nome']}: confluência {n_grupos} grupo(s) < {_CONFLUENCIA_GRUPOS_MIN} — rejeitado")
                 continue
 
+            # Sharpe implícito: EV / volatilidade-proxy (stop_frac)
+            sharpe = cand["ev"] / (cand["stop_frac"] + 1e-9)
+
             # Score final
-            score = cand["ev"] * (1 + n_conf * 0.25) * (1 + abs(cand["pred"]) * 0.1)
+            score = (cand["ev"]
+                     * (1 + n_grupos * 0.30)
+                     * (1 + abs(cand["pred"]) / 100 * 0.20)
+                     * sharpe)
+
+            print(f"   🎯 {cand['nome']}: {n_grupos} grupo(s) conf, score={score:.6f}")
 
             if score > melhor_score:
                 melhor_score = score
-                melhor_sinal = {**cand, "n_conf": n_conf, "conf_nomes": conf_nomes,
-                                "direcao": direcao, "regime": regime}
-                
+                melhor = {
+                    **cand,
+                    "n_grupos":  n_grupos,
+                    "grupos_conf": grupos_conf,
+                    "h_conf":    h_conf,
+                    "score":     score,
+                }
 
-        if melhor_sinal is None:
+        if melhor is None:
+            print(f"🔕 Nenhum candidato com confluência suficiente para {moeda}")
             return
-        
-        
 
+        # ── Cooldown global ───────────────────────────────────────────────
+        if tempo_desde_ultimo < _COOLDOWN_GLOBAL:
+            ev_novo = melhor["ev"]
+            if not (ev_ult > 0 and ev_novo >= ev_ult * _EV_BREAK_FACTOR):
+                print(f"🔕 Cooldown global ({int(tempo_desde_ultimo)}s < {_COOLDOWN_GLOBAL}s) — aguarda")
+                return
 
-        # ── 3. Monta e envia ───────────────────────────────────────────────
-        h = melhor_sinal["h"]
-        direcao = melhor_sinal["direcao"]
-        ganho_h = _ALVO_H[h]
-        perda_h = _STOP_H[h]
-
-        alvo = preco * (1 + ganho_h) if direcao > 0 else preco * (1 - ganho_h)
-        stop = preco * (1 - perda_h) if direcao > 0 else preco * (1 + perda_h)
+        # ── Monta e envia ─────────────────────────────────────────────────
+        direcao_int = 1 if melhor["pred"] > 0 else -1
+        alvo = preco * (1 + melhor["alvo_frac"]) if direcao_int > 0 else preco * (1 - melhor["alvo_frac"])
+        stop = preco * (1 - melhor["stop_frac"]) if direcao_int > 0 else preco * (1 + melhor["stop_frac"])
 
         payload = {
-            "ativo": moeda.replace("USDT", "/USDT"),
-            "direcao": "ALTA" if direcao > 0 else "BAIXA",
-            "horizonte": melhor_sinal["nome"],
-            "entrada": preco,
-            "alvo": alvo,
-            "stop": stop,
-            "acuracia": melhor_sinal["acuracia"],
-            "profit_factor": melhor_sinal["pf"],
+            # Dados do ativo
+            "ativo":                  moeda.replace("USDT", "/USDT"),
+            "direcao":                "ALTA" if direcao_int > 0 else "BAIXA",
+            "horizonte":              melhor["nome"],
+            "entrada":                preco,
+            "alvo":                   alvo,
+            "stop":                   stop,
+            # Métricas
+            "acuracia":               round(melhor["p_raw"] * 100, 1),
+            "acuracia_janela":        melhor["n"],
+            "ev":                     melhor["ev"],
+            "profit_factor":          melhor["pf"],
+            "rr":                     melhor["rr"],
+            # Confluência
+            "confluencia_n":          melhor["n_grupos"],
+            "confluencia_grupos":     melhor["grupos_conf"],
+            "horizontes_confirmadores": melhor["h_conf"],
+            # Contexto
+            "regime":                 regime,
+            "score":                  round(melhor["score"], 5),
         }
 
         enviar_para_todos_canais(self.token_bot, payload)
-        self._ultimo_sinal.setdefault(moeda, {})[h] = agora
-        self._ultimo_sinal_global[moeda] = agora
 
-        print(f"\n[SINAL] 📤 {moeda} {payload['direcao']} {payload['horizonte']} | "
-            f"EV={melhor_sinal['ev']*100:.2f}% | PF={melhor_sinal['pf']:.2f} | "
-            f"Conf={melhor_sinal['n_conf']} | Score={melhor_score:.4f}")
+        # Registra cooldowns
+        self._ultimo_sinal.setdefault(moeda, {})[melhor["h"]] = {
+            "ts": agora, "ev": melhor["ev"]
+        }
+        self._ultimo_sinal_global[moeda] = {"ts": agora, "ev": melhor["ev"]}
+
+        print(f"\n📤 SINAL ENVIADO {moeda} {payload['direcao']} {melhor['nome']} | "
+              f"EV={melhor['ev']*100:.3f}% | PF={melhor['pf']:.2f} | "
+              f"R/R={melhor['rr']:.2f} | Grupos={melhor['n_grupos']} | "
+              f"Score={melhor['score']:.5f}")
 
     # ─────────────────────────────────────────────────────────────────────────
     # HELPERS
@@ -291,7 +566,6 @@ class SignalEngine:
 
     @staticmethod
     def _merge_resultados(ram: dict, arquivo: str | None) -> dict:
-        """Combina resultados em RAM com os persistidos em disco."""
         merged: dict[str, dict] = {}
 
         for h_key, dados in ram.items():

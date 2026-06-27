@@ -239,6 +239,8 @@ class CryptoApp:
         
         self.verificacoes: dict[str, deque] = {}
         self.resultados_verificacao: dict[str, dict] = {}
+        # ADICIONAR após self.resultados_verificacao: dict[str, dict] = {}
+        self.historico_individual: dict[str, dict] = {}  # {moeda: {horizonte: deque(maxlen=1000)}}
 
         self.pesos: dict[str, PesosAdaptativos] = {}
         self.features_anteriores: dict[str, list] = {}
@@ -564,6 +566,7 @@ class CryptoApp:
 
             if mente is not None:
                 acc_por_horizonte = mente.accuracy_por_horizonte
+                print(f"🧠 acc_mente BTC: {[round(a*100,1) for a in acc_por_horizonte[:4]]}")  # ⭐ DEBUG
                 preds_raw = mente.forward(features)
                 preds_percentual = [p * 5.0 for p in preds_raw]
                 preds_para_verificar = preds_percentual.copy()  # VALORES PUROS DA REDE
@@ -599,16 +602,12 @@ class CryptoApp:
                 recompensas_maduras = self.buffers[moeda].coletar_maduras(time.time(), preco)
 
                 if recompensas_maduras:
-                    # Junta todas as recompensas maduras
-                    recompensas_array = [0.0] * N_HORIZONTES
-                    for i, rec in recompensas_maduras:
-                        recompensas_array[i] = rec
-                    
-                    # Treina UMA VEZ com todas as recompensas
-                    try:
-                        mente.aprender(recompensas_array)
-                    except Exception as e:
-                        print(f"[PyTorch] Erro no aprendizado: {e}")
+                    for i, recompensa in recompensas_maduras:
+                        try:
+                            mente.aprender_horizonte(i, recompensa)
+                        except Exception as e:
+                            print(f"[PyTorch] Erro no aprendizado horizonte {i}: {e}")
+                            
                 # ✅ VERIFICAÇÃO REAL POR HORIZONTE
                 if not hasattr(self, 'verificacoes'):
                     self.verificacoes = {}
@@ -620,6 +619,10 @@ class CryptoApp:
                         h: {"acertos": 0, "erros": 0, "total": 0} 
                         for h in HORIZONTES
                     }
+                    if moeda not in self.historico_individual:
+                        self.historico_individual[moeda] = {
+                            h: deque(maxlen=1000) for h in HORIZONTES
+                        }
 
                 # Salva snapshot atual para verificar depois
                 self.verificacoes[moeda].append({
@@ -639,7 +642,8 @@ class CryptoApp:
                     for i, horizonte in enumerate(HORIZONTES):
                         chave = f"_vrf_{i}"
                         if tempo_passado >= horizonte and not v.get(chave):
-                            # Preço alvo: busca o preço real no momento do horizonte
+                            
+                            # busca preço alvo...
                             preco_alvo = None
                             for v2 in self.verificacoes[moeda]:
                                 if abs(v2["time"] - (v["time"] + horizonte)) <= self.timeframe * 2:
@@ -647,16 +651,14 @@ class CryptoApp:
                                     break
                             
                             if preco_alvo is None:
-                                # Busca o preço mais próximo dentro de uma janela maior
                                 melhor_diff = float('inf')
                                 for v2 in self.verificacoes[moeda]:
                                     diff = abs(v2["time"] - (v["time"] + horizonte))
-                                    if diff < melhor_diff and diff <= horizonte * 0.2:  # 20% de tolerância
+                                    if diff < melhor_diff and diff <= horizonte * 0.2:
                                         melhor_diff = diff
                                         preco_alvo = v2["price"]
-                                
                                 if preco_alvo is None:
-                                    continue  # ⭐ Pula em vez de usar fallback
+                                    continue
                             
                             direcao_prevista = 1 if v["preds"][i] > 0 else -1
                             direcao_real = 1 if preco_alvo > v["price"] else -1
@@ -668,8 +670,19 @@ class CryptoApp:
                             resultados[horizonte]["total"] += 1
                             
                             v[chave] = True
+                            
+                            # ↓ TUDO isso ainda está dentro do "if tempo_passado >= horizonte"
+                            if moeda not in self.historico_individual:
+                                self.historico_individual[moeda] = {
+                                    h: deque(maxlen=1000) for h in HORIZONTES
+                                }
+                            if horizonte not in self.historico_individual[moeda]:
+                                self.historico_individual[moeda][horizonte] = deque(maxlen=1000)
+                            self.historico_individual[moeda][horizonte].append(
+                                1 if direcao_prevista == direcao_real else 0
+                            )
                     
-                    # Remove se todos horizontes verificados ou > 2 dias
+                    # ← de volta ao nível do "for v"
                     todos_vrf = all(v.get(f"_vrf_{i}") for i in range(len(HORIZONTES)))
                     if todos_vrf or tempo_passado > 172800:
                         para_remover.append(v)
@@ -751,7 +764,7 @@ class CryptoApp:
                         self.resultados_verificacao.get(moeda, {}),
                         dado.get("regime", "ranging"),
                         arquivo_disco=f"data/verificacoes/{moeda}.json",
-                       
+                        acc_mente=acc_por_horizonte
                     )
 
                 # ✅ NOVO: Salva TODOS os horizontes dinamicamente
@@ -1233,17 +1246,16 @@ class CryptoApp:
             print(f"[CRYPTO] Erro: {e}")
 
     def salvar_resultados_verificacao(self):
-        """Salva os resultados de verificação em JSON (ACUMULA, não sobrescreve)"""
         if not hasattr(self, 'resultados_verificacao'):
             return
-        
+
         import os
         os.makedirs("data/verificacoes", exist_ok=True)
-        
+
         for moeda, resultados_novos in self.resultados_verificacao.items():
             arquivo = f"data/verificacoes/{moeda}.json"
-            
-            # ⭐ 1. Carrega dados ANTIGOS (se existirem)
+
+            # Carrega acumulado existente
             dados_acumulados = {}
             if os.path.exists(arquivo):
                 try:
@@ -1251,32 +1263,43 @@ class CryptoApp:
                         dados_acumulados = json.load(f)
                 except:
                     dados_acumulados = {}
-            
-            # ⭐ 2. Soma os NOVOS resultados aos ANTIGOS
+
+            # Soma acumulado
             for h, novos in resultados_novos.items():
                 h_str = str(h)
                 if h_str in dados_acumulados:
                     dados_acumulados[h_str]['acertos'] += novos['acertos']
-                    dados_acumulados[h_str]['erros'] += novos['erros']
-                    dados_acumulados[h_str]['total'] += novos['total']
+                    dados_acumulados[h_str]['erros']   += novos['erros']
+                    dados_acumulados[h_str]['total']   += novos['total']
                 else:
                     dados_acumulados[h_str] = {
                         'acertos': novos['acertos'],
-                        'erros': novos['erros'],
-                        'total': novos['total']
+                        'erros':   novos['erros'],
+                        'total':   novos['total']
                     }
-            
-            # ⭐ 3. Salva o ACUMULADO
+
+            # NOVO: salva histórico individual (lista de 0/1, últimos 1000)
+            hist_moeda = self.historico_individual.get(moeda, {})
+            for h, fila in hist_moeda.items():
+                h_str = str(h)
+                if h_str not in dados_acumulados:
+                    dados_acumulados[h_str] = {'acertos': 0, 'erros': 0, 'total': 0}
+                
+                # Carrega histórico anterior salvo no disco e mescla com o novo
+                historico_disco = dados_acumulados[h_str].get('historico', [])
+                historico_novo  = list(fila)  # os trades desta sessão
+                historico_merged = (historico_disco + historico_novo)[-1000:]  # mantém só 1000
+                dados_acumulados[h_str]['historico'] = historico_merged
+
             with open(arquivo, "w") as f:
                 json.dump(dados_acumulados, f, indent=2)
-        
-        # ⭐ 4. Zera os contadores em memória (pra não duplicar na próxima)
+
+        # Zera contadores em memória (não zera historico_individual — é cumulativo)
         for moeda in self.resultados_verificacao:
             for h in self.resultados_verificacao[moeda]:
                 self.resultados_verificacao[moeda][h] = {"acertos": 0, "erros": 0, "total": 0}
-        
-        print("[CRYPTO] 📊 Resultados acumulados salvos com sucesso")
 
+        print("[CRYPTO] 📊 Resultados acumulados salvos com sucesso")
     def medir_risk_reward(self):
         """Calcula o Risk/Reward real baseado nos dados de verificação"""
         import json
