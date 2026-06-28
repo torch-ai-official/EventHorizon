@@ -101,31 +101,31 @@ _PRED_MIN = {
 }
 
 # Janela deslizante de acurácia: quantos trades recentes considerar
+# ⭐ JANELAS REALISTAS (mínimo 2000+ trades para horizontes curtos)
 _ROLLING_WINDOW = {
-    5:     800,    # Era 500
-    15:    600,    # Era 300
-    30:    500,    # Era 200
-    60:    400,    # Era 150
-    300:   300,    # Era 100
-    900:   200,    # Era 80
-    1800:  150,    # Era 60
-    3600:  120,    # Era 50
-    18000: 80,     # Era 30
-    86400: 50,     # Era 20
+    5:     5000,   # Era 800 → 5000
+    15:    4000,   # Era 600 → 4000
+    30:    3000,   # Era 500 → 3000
+    60:    2000,   # Era 400 → 2000
+    300:   1000,   # Era 300 → 1000
+    900:   800,    # Era 200 → 800
+    1800:  600,    # Era 150 → 600
+    3600:  400,    # Era 120 → 400
+    18000: 200,    # Era 80 → 200
+    86400: 100,    # Era 50 → 100
 }
 
-# Amostras mínimas na janela para o sinal ser válido
 _AMOSTRAS_MIN = {
-    5:     150,
-    15:    100,
-    30:     80,
-    60:     60,
-    300:    50,
-    900:    40,
-    1800:   30,
-    3600:   25,
-    18000:  15,
-    86400:   8,
+    5:     2000,   # Era 150 → 2000
+    15:    1500,
+    30:    1000,
+    60:    800,
+    300:   500,
+    900:   300,
+    1800:  200,
+    3600:  150,
+    18000: 100,
+    86400: 50,
 }
 
 # EV mínimo por operação (fração do preço)
@@ -406,7 +406,6 @@ class SignalEngine:
             # 3. Acurácia rolling
             if acc_mente is not None and idx < len(acc_mente):
                 p_raw = acc_mente[idx]
-                # Janela implícita: se temos acc_mente, é a acurácia recente da rede
                 n_amostras = resultados.get(str(h), {}).get("total", 0)
                 n_amostras = min(n_amostras, _ROLLING_WINDOW[h])
             else:
@@ -416,8 +415,12 @@ class SignalEngine:
                 rejeitar(f"Amostras ({n_amostras} < {_AMOSTRAS_MIN[h]})")
                 continue
 
+            # ⭐ NOVO: Use o JSON acumulado para PF (mais realista)
+            p_json = resultados.get(str(h), {}).get("acertos", 0) / max(resultados.get(str(h), {}).get("total", 1), 1)
+            p = p_json  # ⭐ Use JSON para PF realista
+
             # Cap anti-overfitting (85%)
-            p = min(p_raw, 0.85)
+            p = min(p, 0.85)
 
             # 4. R/R dinâmico
             alvo_frac, stop_frac, rr = _rr_dinamico(h, pred)
@@ -429,6 +432,10 @@ class SignalEngine:
             # 5. EV e PF com R/R dinâmico
             ev = p * alvo_frac - (1 - p) * stop_frac
             pf = (p * alvo_frac) / ((1 - p) * stop_frac + 1e-9)
+
+            # ⭐ CAP o PF em 5.0 (evita valores irreais)
+            if pf > 5.0:
+                pf = 5.0
 
             if ev < _EV_MIN:
                 rejeitar(f"EV {ev*100:.3f}% < {_EV_MIN*100:.3f}%")
