@@ -4,1099 +4,1099 @@
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 3.5,
+    "confianca": 80.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601236.2063482,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782789690.515807,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 3.5,
+    "confianca": 80.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601236.2260604,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782789690.6903315,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.0,
-    "confianca": 54.5,
+    "previsao": 3.5,
+    "confianca": 80.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601236.2418387,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782789690.9100955,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 4.0,
+    "confianca": 80.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601236.2623389,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782789690.9837265,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 4.0,
+    "confianca": 80.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601264.2166703,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782789691.1544425,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 4.0,
+    "confianca": 80.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601265.1958475,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782789691.3608623,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 3.2,
+    "confianca": 80.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601266.2113216,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782789691.3982387,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 3.3,
+    "confianca": 80.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601266.2413783,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782789691.4475708,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 0.4,
+    "confianca": 80.7,
     "acuracia_min_config": 40,
-    "timestamp": 1782601266.2580812,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782790695.584494,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.7% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 0.5,
+    "confianca": 80.7,
     "acuracia_min_config": 40,
-    "timestamp": 1782601266.2815304,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782790697.8825452,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.7% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.0,
-    "confianca": 54.5,
+    "previsao": 0.4,
+    "confianca": 80.7,
     "acuracia_min_config": 40,
-    "timestamp": 1782601294.218994,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782790697.9349737,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.7% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 0.7,
+    "confianca": 80.6,
     "acuracia_min_config": 40,
-    "timestamp": 1782601295.1966445,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782790710.301718,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.6% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 0.7,
+    "confianca": 80.6,
     "acuracia_min_config": 40,
-    "timestamp": 1782601296.2057796,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782790710.509894,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.6% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.0,
-    "confianca": 54.5,
+    "previsao": 0.6,
+    "confianca": 80.6,
     "acuracia_min_config": 40,
-    "timestamp": 1782601296.221105,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782790710.6429791,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.6% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 0.8,
+    "confianca": 80.6,
     "acuracia_min_config": 40,
-    "timestamp": 1782601296.237135,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782790710.6679914,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.6% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 0.7,
+    "confianca": 80.6,
     "acuracia_min_config": 40,
-    "timestamp": 1782601296.258113,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782790710.6835988,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.6% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 0.6,
+    "confianca": 80.6,
     "acuracia_min_config": 40,
-    "timestamp": 1782601325.1913738,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782790710.890166,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.6% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 0.8,
+    "confianca": 80.6,
     "acuracia_min_config": 40,
-    "timestamp": 1782601326.2092614,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782790725.592204,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.6% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 0.7,
+    "confianca": 80.5,
     "acuracia_min_config": 40,
-    "timestamp": 1782601326.2565482,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782790727.8857918,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.5% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 0.6,
+    "confianca": 80.5,
     "acuracia_min_config": 40,
-    "timestamp": 1782601355.1997254,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782790727.9191155,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.5% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 0.6,
+    "confianca": 81.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601356.225023,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782791447.8813457,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 81.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 0.6,
+    "confianca": 81.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601356.265976,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782791447.921806,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 81.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 2.3,
+    "confianca": 81.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601364.2167132,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782791475.5929627,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 81.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.0,
-    "confianca": 54.5,
+    "previsao": 2.5,
+    "confianca": 81.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601364.2383819,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782791477.8772736,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 81.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 2.5,
+    "confianca": 81.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601364.2532248,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782791477.911222,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 81.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 2.9,
+    "confianca": 81.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601385.2031002,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782791490.2501447,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 81.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 2.8,
+    "confianca": 81.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601386.214335,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782791490.2739863,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 81.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.0,
-    "confianca": 54.5,
+    "previsao": 2.9,
+    "confianca": 81.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601386.26287,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782791490.2888432,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 81.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.0,
-    "confianca": 54.5,
+    "previsao": 2.7,
+    "confianca": 81.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601415.1900504,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782791490.3104625,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 81.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 2.9,
+    "confianca": 81.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601416.2049608,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782791490.5244126,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 81.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.9,
-    "confianca": 54.5,
+    "previsao": 2.8,
+    "confianca": 81.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601416.265177,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782791490.730551,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 81.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.4,
-    "confianca": 54.5,
+    "previsao": 2.7,
+    "confianca": 81.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601424.224157,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782791505.5955608,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 81.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.3,
-    "confianca": 54.5,
+    "previsao": 2.5,
+    "confianca": 81.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601424.2404342,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782791507.8806195,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 81.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.3,
-    "confianca": 54.5,
+    "previsao": 2.6,
+    "confianca": 81.0,
     "acuracia_min_config": 40,
-    "timestamp": 1782601424.2552044,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.5% (m\u00edn: 40%)"
+    "timestamp": 1782791507.910162,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 81.0% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.5,
-    "confianca": 54.6,
+    "previsao": 1.9,
+    "confianca": 80.9,
     "acuracia_min_config": 40,
-    "timestamp": 1782601445.1928523,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.6% (m\u00edn: 40%)"
+    "timestamp": 1782791535.596379,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.9% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.5,
-    "confianca": 54.6,
+    "previsao": 1.9,
+    "confianca": 80.9,
     "acuracia_min_config": 40,
-    "timestamp": 1782601446.2092938,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.6% (m\u00edn: 40%)"
+    "timestamp": 1782791537.8707783,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.9% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.5,
-    "confianca": 54.6,
+    "previsao": 2.0,
+    "confianca": 80.9,
     "acuracia_min_config": 40,
-    "timestamp": 1782601446.2565675,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.6% (m\u00edn: 40%)"
+    "timestamp": 1782791537.9128034,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.9% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 21.0,
-    "confianca": 54.6,
+    "previsao": 1.9,
+    "confianca": 80.8,
     "acuracia_min_config": 40,
-    "timestamp": 1782601475.1974902,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.6% (m\u00edn: 40%)"
+    "timestamp": 1782791550.2826414,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.8% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 21.0,
-    "confianca": 54.6,
+    "previsao": 1.9,
+    "confianca": 80.8,
     "acuracia_min_config": 40,
-    "timestamp": 1782601476.2052622,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.6% (m\u00edn: 40%)"
+    "timestamp": 1782791550.3878982,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.8% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 21.0,
-    "confianca": 54.6,
+    "previsao": 1.9,
+    "confianca": 80.8,
     "acuracia_min_config": 40,
-    "timestamp": 1782601476.261285,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.6% (m\u00edn: 40%)"
+    "timestamp": 1782791550.5523674,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.8% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.8,
-    "confianca": 54.6,
+    "previsao": 1.8,
+    "confianca": 80.8,
     "acuracia_min_config": 40,
-    "timestamp": 1782601484.2199023,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.6% (m\u00edn: 40%)"
+    "timestamp": 1782791550.8089216,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.8% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.8,
-    "confianca": 54.6,
+    "previsao": 1.9,
+    "confianca": 80.8,
     "acuracia_min_config": 40,
-    "timestamp": 1782601484.2411277,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.6% (m\u00edn: 40%)"
+    "timestamp": 1782791551.0182056,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.8% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.7,
-    "confianca": 54.6,
+    "previsao": 1.9,
+    "confianca": 80.8,
     "acuracia_min_config": 40,
-    "timestamp": 1782601484.255451,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.6% (m\u00edn: 40%)"
+    "timestamp": 1782791551.1935446,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.8% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 21.7,
-    "confianca": 54.7,
+    "previsao": 0.1,
+    "confianca": 80.7,
     "acuracia_min_config": 40,
-    "timestamp": 1782601505.2044716,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.7% (m\u00edn: 40%)"
+    "timestamp": 1782791910.2886138,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.7% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 21.7,
-    "confianca": 54.7,
+    "previsao": 0.1,
+    "confianca": 80.7,
     "acuracia_min_config": 40,
-    "timestamp": 1782601506.2082803,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.7% (m\u00edn: 40%)"
+    "timestamp": 1782791910.4933794,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.7% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 21.6,
-    "confianca": 54.7,
+    "previsao": 0.2,
+    "confianca": 80.7,
     "acuracia_min_config": 40,
-    "timestamp": 1782601506.2568102,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.7% (m\u00edn: 40%)"
+    "timestamp": 1782791910.7176447,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.7% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 21.9,
-    "confianca": 54.8,
+    "previsao": 0.3,
+    "confianca": 80.7,
     "acuracia_min_config": 40,
-    "timestamp": 1782601535.1957905,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.8% (m\u00edn: 40%)"
+    "timestamp": 1782791911.0932426,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.7% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 21.8,
-    "confianca": 54.8,
+    "previsao": 0.4,
+    "confianca": 80.7,
     "acuracia_min_config": 40,
-    "timestamp": 1782601536.6068757,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.8% (m\u00edn: 40%)"
+    "timestamp": 1782791911.301261,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.7% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 21.9,
-    "confianca": 54.8,
+    "previsao": 0.5,
+    "confianca": 80.7,
     "acuracia_min_config": 40,
-    "timestamp": 1782601536.6440566,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.8% (m\u00edn: 40%)"
+    "timestamp": 1782791911.700223,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.7% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 21.5,
-    "confianca": 54.8,
+    "previsao": 0.6,
+    "confianca": 80.7,
     "acuracia_min_config": 40,
-    "timestamp": 1782601544.2311757,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.8% (m\u00edn: 40%)"
+    "timestamp": 1782791916.968628,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.7% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 21.6,
-    "confianca": 54.8,
+    "previsao": 0.5,
+    "confianca": 80.7,
     "acuracia_min_config": 40,
-    "timestamp": 1782601544.246996,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.8% (m\u00edn: 40%)"
+    "timestamp": 1782791919.2136533,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.7% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 21.5,
-    "confianca": 54.8,
+    "previsao": 0.7,
+    "confianca": 80.7,
     "acuracia_min_config": 40,
-    "timestamp": 1782601544.2618227,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.8% (m\u00edn: 40%)"
+    "timestamp": 1782791919.230009,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.7% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 21.4,
-    "confianca": 54.8,
+    "previsao": 0.7,
+    "confianca": 80.6,
     "acuracia_min_config": 40,
-    "timestamp": 1782601565.190064,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.8% (m\u00edn: 40%)"
+    "timestamp": 1782791947.22714,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.6% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 21.5,
-    "confianca": 54.8,
+    "previsao": 0.7,
+    "confianca": 80.6,
     "acuracia_min_config": 40,
-    "timestamp": 1782601566.207937,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.8% (m\u00edn: 40%)"
+    "timestamp": 1782791949.226183,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.6% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 21.5,
-    "confianca": 54.8,
+    "previsao": 0.7,
+    "confianca": 80.6,
     "acuracia_min_config": 40,
-    "timestamp": 1782601566.257775,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.8% (m\u00edn: 40%)"
+    "timestamp": 1782791949.4537227,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.6% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 21.6,
-    "confianca": 54.9,
+    "previsao": 0.3,
+    "confianca": 80.6,
     "acuracia_min_config": 40,
-    "timestamp": 1782601595.1896071,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.9% (m\u00edn: 40%)"
+    "timestamp": 1782791970.2351577,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.6% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 21.6,
-    "confianca": 54.9,
+    "previsao": 0.4,
+    "confianca": 80.6,
     "acuracia_min_config": 40,
-    "timestamp": 1782601596.2132785,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.9% (m\u00edn: 40%)"
+    "timestamp": 1782791970.7035155,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.6% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 21.6,
-    "confianca": 54.9,
+    "previsao": 0.4,
+    "confianca": 80.6,
     "acuracia_min_config": 40,
-    "timestamp": 1782601596.2603822,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.9% (m\u00edn: 40%)"
+    "timestamp": 1782791970.7259657,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.6% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.7,
-    "confianca": 54.9,
+    "previsao": 0.4,
+    "confianca": 80.6,
     "acuracia_min_config": 40,
-    "timestamp": 1782601604.2307339,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.9% (m\u00edn: 40%)"
+    "timestamp": 1782791970.7411578,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.6% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.7,
-    "confianca": 54.9,
+    "previsao": 0.3,
+    "confianca": 80.6,
     "acuracia_min_config": 40,
-    "timestamp": 1782601604.246189,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.9% (m\u00edn: 40%)"
+    "timestamp": 1782791970.7548654,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.6% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.7,
-    "confianca": 54.9,
+    "previsao": 0.4,
+    "confianca": 80.6,
     "acuracia_min_config": 40,
-    "timestamp": 1782601604.2607286,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.9% (m\u00edn: 40%)"
+    "timestamp": 1782791970.7695158,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.6% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.4,
-    "confianca": 55.0,
+    "previsao": 0.3,
+    "confianca": 80.5,
     "acuracia_min_config": 40,
-    "timestamp": 1782601625.1950347,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 55.0% (m\u00edn: 40%)"
+    "timestamp": 1782792877.2257714,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.5% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.3,
-    "confianca": 55.0,
+    "previsao": 0.3,
+    "confianca": 80.5,
     "acuracia_min_config": 40,
-    "timestamp": 1782601626.2137997,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 55.0% (m\u00edn: 40%)"
+    "timestamp": 1782792879.2276967,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.5% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.4,
-    "confianca": 55.0,
+    "previsao": 0.3,
+    "confianca": 80.5,
     "acuracia_min_config": 40,
-    "timestamp": 1782601626.2642176,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 55.0% (m\u00edn: 40%)"
+    "timestamp": 1782792879.448517,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.5% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.9,
-    "confianca": 55.1,
+    "previsao": 2.8,
+    "confianca": 80.5,
     "acuracia_min_config": 40,
-    "timestamp": 1782601655.1898086,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 55.1% (m\u00edn: 40%)"
+    "timestamp": 1782792907.2117853,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.5% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 21.1,
-    "confianca": 55.1,
+    "previsao": 2.7,
+    "confianca": 80.5,
     "acuracia_min_config": 40,
-    "timestamp": 1782601656.207659,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 55.1% (m\u00edn: 40%)"
+    "timestamp": 1782792909.2263806,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.5% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 21.1,
-    "confianca": 55.1,
+    "previsao": 2.8,
+    "confianca": 80.5,
     "acuracia_min_config": 40,
-    "timestamp": 1782601656.267235,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 55.1% (m\u00edn: 40%)"
+    "timestamp": 1782792909.244507,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.5% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.9,
-    "confianca": 55.1,
+    "previsao": 3.5,
+    "confianca": 80.5,
     "acuracia_min_config": 40,
-    "timestamp": 1782601664.223245,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 55.1% (m\u00edn: 40%)"
+    "timestamp": 1782792930.3811815,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.5% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.7,
-    "confianca": 55.1,
+    "previsao": 3.5,
+    "confianca": 80.5,
     "acuracia_min_config": 40,
-    "timestamp": 1782601664.2470634,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 55.1% (m\u00edn: 40%)"
+    "timestamp": 1782792930.3996685,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.5% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.8,
-    "confianca": 55.1,
+    "previsao": 3.5,
+    "confianca": 80.5,
     "acuracia_min_config": 40,
-    "timestamp": 1782601664.261415,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 55.1% (m\u00edn: 40%)"
+    "timestamp": 1782792930.4442773,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.5% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.5,
-    "confianca": 55.1,
+    "previsao": 3.5,
+    "confianca": 80.5,
     "acuracia_min_config": 40,
-    "timestamp": 1782601685.1912537,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 55.1% (m\u00edn: 40%)"
+    "timestamp": 1782792930.7135124,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.5% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.1,
-    "confianca": 55.1,
+    "previsao": 3.5,
+    "confianca": 80.5,
     "acuracia_min_config": 40,
-    "timestamp": 1782601686.2093976,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 55.1% (m\u00edn: 40%)"
+    "timestamp": 1782792930.731488,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.5% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 20.2,
-    "confianca": 55.1,
+    "previsao": 3.4,
+    "confianca": 80.5,
     "acuracia_min_config": 40,
-    "timestamp": 1782601686.257448,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 55.1% (m\u00edn: 40%)"
+    "timestamp": 1782792930.7512512,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.5% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 18.9,
-    "confianca": 55.1,
+    "previsao": 3.5,
+    "confianca": 80.5,
     "acuracia_min_config": 40,
-    "timestamp": 1782601715.197796,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 55.1% (m\u00edn: 40%)"
+    "timestamp": 1782792937.3867338,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.5% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 18.9,
-    "confianca": 55.1,
+    "previsao": 3.6,
+    "confianca": 80.5,
     "acuracia_min_config": 40,
-    "timestamp": 1782601716.2116811,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 55.1% (m\u00edn: 40%)"
+    "timestamp": 1782792939.215771,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.5% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 18.9,
-    "confianca": 55.1,
+    "previsao": 3.6,
+    "confianca": 80.5,
     "acuracia_min_config": 40,
-    "timestamp": 1782601716.260721,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 55.1% (m\u00edn: 40%)"
+    "timestamp": 1782792939.287533,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.5% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 18.8,
-    "confianca": 55.1,
+    "previsao": 3.5,
+    "confianca": 80.5,
     "acuracia_min_config": 40,
-    "timestamp": 1782601724.2317948,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 55.1% (m\u00edn: 40%)"
+    "timestamp": 1782792967.4853537,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.5% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 18.8,
-    "confianca": 55.1,
+    "previsao": 3.4,
+    "confianca": 80.5,
     "acuracia_min_config": 40,
-    "timestamp": 1782601724.2478194,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 55.1% (m\u00edn: 40%)"
+    "timestamp": 1782792969.2317796,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.5% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 18.8,
-    "confianca": 55.1,
+    "previsao": 3.4,
+    "confianca": 80.5,
     "acuracia_min_config": 40,
-    "timestamp": 1782601724.263924,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 55.1% (m\u00edn: 40%)"
+    "timestamp": 1782792969.3268516,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.5% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.4,
-    "confianca": 55.0,
+    "previsao": 3.3,
+    "confianca": 80.4,
     "acuracia_min_config": 40,
-    "timestamp": 1782601745.195007,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 55.0% (m\u00edn: 40%)"
+    "timestamp": 1782792990.3274043,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.4% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.6,
-    "confianca": 55.0,
+    "previsao": 3.2,
+    "confianca": 80.4,
     "acuracia_min_config": 40,
-    "timestamp": 1782601746.2082708,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 55.0% (m\u00edn: 40%)"
+    "timestamp": 1782792990.418056,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.4% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.2,
-    "confianca": 55.0,
+    "previsao": 3.3,
+    "confianca": 80.4,
     "acuracia_min_config": 40,
-    "timestamp": 1782601746.265756,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 55.0% (m\u00edn: 40%)"
+    "timestamp": 1782792990.6241894,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.4% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.3,
-    "confianca": 54.9,
+    "previsao": 3.3,
+    "confianca": 80.4,
     "acuracia_min_config": 40,
-    "timestamp": 1782601775.1946468,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.9% (m\u00edn: 40%)"
+    "timestamp": 1782792990.9234264,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.4% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.4,
-    "confianca": 54.9,
+    "previsao": 3.3,
+    "confianca": 80.4,
     "acuracia_min_config": 40,
-    "timestamp": 1782601776.2042835,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.9% (m\u00edn: 40%)"
+    "timestamp": 1782792991.0062337,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.4% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.3,
-    "confianca": 54.9,
+    "previsao": 3.3,
+    "confianca": 80.4,
     "acuracia_min_config": 40,
-    "timestamp": 1782601776.2583742,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.9% (m\u00edn: 40%)"
+    "timestamp": 1782792991.0393565,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.4% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.3,
-    "confianca": 54.9,
+    "previsao": 3.3,
+    "confianca": 80.3,
     "acuracia_min_config": 40,
-    "timestamp": 1782601784.2335377,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.9% (m\u00edn: 40%)"
+    "timestamp": 1782792997.211805,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.3% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.4,
-    "confianca": 54.9,
+    "previsao": 3.3,
+    "confianca": 80.3,
     "acuracia_min_config": 40,
-    "timestamp": 1782601784.2500134,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.9% (m\u00edn: 40%)"
+    "timestamp": 1782792999.2332675,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.3% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 19.4,
-    "confianca": 54.9,
+    "previsao": 3.3,
+    "confianca": 80.3,
     "acuracia_min_config": 40,
-    "timestamp": 1782601784.2653608,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.9% (m\u00edn: 40%)"
+    "timestamp": 1782792999.2501988,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.3% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 18.7,
-    "confianca": 54.8,
+    "previsao": 2.3,
+    "confianca": 80.2,
     "acuracia_min_config": 40,
-    "timestamp": 1782601805.196011,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.8% (m\u00edn: 40%)"
+    "timestamp": 1782793027.441097,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.2% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 18.7,
-    "confianca": 54.8,
+    "previsao": 2.3,
+    "confianca": 80.2,
     "acuracia_min_config": 40,
-    "timestamp": 1782601806.2057486,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.8% (m\u00edn: 40%)"
+    "timestamp": 1782793029.291398,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.2% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 18.9,
-    "confianca": 54.8,
+    "previsao": 2.3,
+    "confianca": 80.2,
     "acuracia_min_config": 40,
-    "timestamp": 1782601806.263209,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.8% (m\u00edn: 40%)"
+    "timestamp": 1782793029.3142774,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.2% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 18.4,
-    "confianca": 54.7,
+    "previsao": 1.3,
+    "confianca": 80.2,
     "acuracia_min_config": 40,
-    "timestamp": 1782601835.2018175,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.7% (m\u00edn: 40%)"
+    "timestamp": 1782793050.2607362,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.2% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 18.3,
-    "confianca": 54.7,
+    "previsao": 1.3,
+    "confianca": 80.2,
     "acuracia_min_config": 40,
-    "timestamp": 1782601836.2062395,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.7% (m\u00edn: 40%)"
+    "timestamp": 1782793050.2773347,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.2% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 18.3,
-    "confianca": 54.7,
+    "previsao": 1.3,
+    "confianca": 80.2,
     "acuracia_min_config": 40,
-    "timestamp": 1782601836.2689679,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.7% (m\u00edn: 40%)"
+    "timestamp": 1782793050.296313,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.2% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 18.6,
-    "confianca": 54.7,
+    "previsao": 1.2,
+    "confianca": 80.2,
     "acuracia_min_config": 40,
-    "timestamp": 1782601844.2209485,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.7% (m\u00edn: 40%)"
+    "timestamp": 1782793050.5082479,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.2% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 18.7,
-    "confianca": 54.7,
+    "previsao": 1.3,
+    "confianca": 80.2,
     "acuracia_min_config": 40,
-    "timestamp": 1782601844.2445283,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.7% (m\u00edn: 40%)"
+    "timestamp": 1782793050.615564,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.2% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 18.7,
-    "confianca": 54.7,
+    "previsao": 1.2,
+    "confianca": 80.2,
     "acuracia_min_config": 40,
-    "timestamp": 1782601844.2588742,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.7% (m\u00edn: 40%)"
+    "timestamp": 1782793050.7458367,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.2% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 18.6,
-    "confianca": 54.7,
+    "previsao": 0.8,
+    "confianca": 80.2,
     "acuracia_min_config": 40,
-    "timestamp": 1782601865.1958265,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.7% (m\u00edn: 40%)"
+    "timestamp": 1782793057.216188,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.2% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 18.6,
-    "confianca": 54.7,
+    "previsao": 0.6,
+    "confianca": 80.1,
     "acuracia_min_config": 40,
-    "timestamp": 1782601866.2145858,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.7% (m\u00edn: 40%)"
+    "timestamp": 1782793059.226447,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.1% (m\u00edn: 40%)"
   },
   {
     "tipo": "sinal",
     "moeda": "BTC",
     "direcao": "COMPRAR",
     "horizonte": "5min",
-    "previsao": 18.7,
-    "confianca": 54.7,
+    "previsao": 0.5,
+    "confianca": 80.1,
     "acuracia_min_config": 40,
-    "timestamp": 1782601866.2592437,
-    "mensagem": "COMPRAR BTC - 5min - Conf: 54.7% (m\u00edn: 40%)"
+    "timestamp": 1782793059.291707,
+    "mensagem": "COMPRAR BTC - 5min - Conf: 80.1% (m\u00edn: 40%)"
   }
 ]

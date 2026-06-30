@@ -1,116 +1,312 @@
-# scripts/inspecionar_mentes_completo.py
-import torch
-import os
-import json
-from pathlib import Path
-from datetime import datetime
+# validar_previsoes.py
+"""
+Script de validação de previsões da IA
+Compara previsões passadas com o movimento real do mercado
+💀☠️ Sapere aude
+"""
 
-def inspecionar_mentes():
-    """Mostra TUDO que está salvo dentro dos arquivos .pt + verificações"""
+import json
+import os
+import time
+from datetime import datetime, timedelta
+from collections import defaultdict
+
+HORIZONTES = [5, 15, 30, 60, 300, 900, 1800, 3600, 18000, 86400]
+
+_NOMES_H = {
+    5: "5s", 15: "15s", 30: "30s", 60: "1min",
+    300: "5min", 900: "15min", 1800: "30min", 3600: "1h",
+    18000: "5h", 86400: "1d",
+}
+
+# =============================================================================
+# ANÁLISE POR ARQUIVO JSON
+# =============================================================================
+
+def analisar_json_verificacao():
+    """Analisa os arquivos JSON de verificação (dados REAIS)"""
     
-    pt_path = Path("data/mentes_pytorch")
-    vrf_path = Path("data/verificacoes")
+    print("\n" + "=" * 70)
+    print("📊 VALIDAÇÃO DE PREVISÕES - DADOS REAIS DE VERIFICAÇÃO")
+    print("=" * 70)
     
-    arquivos = sorted(pt_path.glob("*.pt"))
-    
-    if not arquivos:
-        print("❌ Nenhum arquivo .pt encontrado!")
+    pasta = "data/verificacoes"
+    if not os.path.exists(pasta):
+        print("❌ Pasta data/verificacoes não encontrada!")
         return
     
-    print("=" * 70)
-    print(f"🧠 RELATÓRIO COMPLETO - {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-    print("=" * 70)
+    arquivos = sorted([f for f in os.listdir(pasta) if f.endswith('.json')])
+    
+    if not arquivos:
+        print("❌ Nenhum arquivo de verificação encontrado!")
+        return
     
     for arquivo in arquivos:
-        nome = arquivo.stem.replace("mente_", "")
-        tamanho_mb = arquivo.stat().st_size / (1024 * 1024)
-        
-        print(f"\n{'='*70}")
-        print(f"📁 {nome}")
-        print(f"   Tamanho: {tamanho_mb:.1f} MB")
-        print(f"{'='*70}")
+        moeda = arquivo.replace('.json', '')
+        caminho = os.path.join(pasta, arquivo)
         
         try:
-            dados = torch.load(arquivo, map_location='cpu')
+            with open(caminho, 'r') as f:
+                dados = json.load(f)
+        except:
+            continue
+        
+        print(f"\n{'─' * 70}")
+        print(f"💰 {moeda}")
+        print(f"{'─' * 70}")
+        print(f"{'Horizonte':<10} {'Trades':<10} {'Acertos':<10} {'Erros':<10} {'Acurácia':<12} {'Status'}")
+        print(f"{'─' * 70}")
+        
+        for h in sorted(dados.keys(), key=int):
+            d = dados[h]
+            total = d.get('total', 0)
+            acertos = d.get('acertos', 0)
+            erros = d.get('erros', 0)
             
-            # Info básica
-            versao = dados.get('versao', '?')
-            geracao = dados.get('geracao', 0)
-            print(f"   🔢 Versão: {versao}")
-            print(f"   🧠 Gerações: {geracao:,}")
+            if total == 0:
+                continue
             
-            # Acurácia de TREINO por horizonte
-            n_acertos = dados.get('n_acertos', [0]*10)
-            n_erros = dados.get('n_erros', [0]*10)
-            horizontes = ['5s','15s','30s','60s','5m','15m','30m','1h','5h','1d']
+            acc = (acertos / total) * 100
+            nome = _NOMES_H.get(int(h), f"{h}s")
             
-            print(f"\n   📊 ACURÁCIA DE TREINO:")
-            print(f"   {'Horiz.':<6} {'Acertos':<10} {'Erros':<10} {'Total':<10} {'Acc %':<8} {'Barra'}")
-            print(f"   {'-'*55}")
+            # Status
+            if acc >= 60:
+                status = "🟢 EXCELENTE"
+            elif acc >= 55:
+                status = "🟡 BOM"
+            elif acc >= 50:
+                status = "🟠 REGULAR"
+            elif acc >= 45:
+                status = "🔴 RUIM"
+            else:
+                status = "💀 PÉSSIMO"
             
-            total_geral = 0
-            for i, h in enumerate(horizontes):
-                a = n_acertos[i] if i < len(n_acertos) else 0
-                e = n_erros[i] if i < len(n_erros) else 0
-                t = a + e
-                total_geral += t
-                acc = (a / t * 100) if t > 0 else 0
-                bar = "█" * int(acc/10) + "░" * (10-int(acc/10))
-                print(f"   {h:<6} {a:<10.0f} {e:<10.0f} {t:<10.0f} {acc:<8.1f} {bar}")
+            # Barra visual
+            barra = "█" * int(acc / 10) + "░" * (10 - int(acc / 10))
             
-            # Total geral
-            acc_geral = (sum(n_acertos) / total_geral * 100) if total_geral > 0 else 0
-            print(f"\n   📊 TOTAL: {total_geral:,.0f} trades | Acurácia média: {acc_geral:.1f}%")
+            print(f"{nome:<10} {total:<10} {acertos:<10} {erros:<10} {barra} {acc:5.1f}%  {status}")
+        
+        # Análise recente (últimos 100 trades de cada horizonte)
+        print(f"\n   📈 PERFORMANCE RECENTE (últimos 100 trades):")
+        for h in sorted(dados.keys(), key=int):
+            d = dados[h]
+            historico = d.get('historico', [])
             
-            # Loss
-            historico_loss = dados.get('historico_loss', [])
-            if historico_loss:
-                loss_inicial = historico_loss[0]
-                loss_final = historico_loss[-1]
-                loss_melhorou = loss_final < loss_inicial
-                print(f"   📉 Loss: {loss_inicial:.4f} → {loss_final:.4f} ({'✅ melhorou' if loss_melhorou else '⚠️ piorou'})")
-            
-            # Estado interno
-            estado = dados.get('estado_interno')
-            if estado is not None:
-                print(f"   🧬 Estado interno: {estado.shape}")
-            
-            # Optimizer & Scheduler
-            tem_opt = 'optimizer_state_dict' in dados
-            tem_sched = 'scheduler_state_dict' in dados
-            print(f"   ⚡ Optimizer: {'✅' if tem_opt else '❌'} | Scheduler: {'✅' if tem_sched else '❌'}")
-            
-            # ACURÁCIA REAL (dos JSONs de verificação)
-            vrf_file = vrf_path / f"{nome}.json"
-            if vrf_file.exists():
-                with open(vrf_file) as f:
-                    vrf = json.load(f)
+            if len(historico) >= 50:
+                recente = historico[-100:]
+                acc_recente = (sum(recente) / len(recente)) * 100
+                total_acc = (d['acertos'] / d['total'] * 100) if d['total'] > 0 else 0
+                tendencia = acc_recente - total_acc
                 
-                print(f"\n   ✅ ACURÁCIA REAL (verificada):")
-                print(f"   {'Horiz.':<6} {'Acertos':<10} {'Erros':<10} {'Total':<10} {'Acc %':<8} {'Barra'}")
-                print(f"   {'-'*55}")
+                nome = _NOMES_H.get(int(h), f"{h}s")
+                seta = "📈" if tendencia > 2 else ("📉" if tendencia < -2 else "➡️")
                 
-                for h in ['5','15','30','60','300','900','1800','3600']:
-                    if h in vrf:
-                        v = vrf[h]
-                        t = v['total']
-                        if t > 0:
-                            acc = v['acertos'] / t * 100
-                            bar = "█" * int(acc/10) + "░" * (10-int(acc/10))
-                            print(f"   {horizontes[list(h_dict.keys()).index(h)] if h in h_dict else h+'s':<6} {v['acertos']:<10} {v['erros']:<10} {t:<10} {acc:<8.1f} {bar}")
-                    else:
-                        print(f"   {h+'s':<6} {'⌛ aguardando...'}")
-            
-        except Exception as e:
-            print(f"   ❌ ERRO: {e}")
-    
-    # Resumo final
-    print(f"\n{'='*70}")
-    print(f"📁 Total de mentes: {len(arquivos)}")
-    print(f"📁 Pasta: {pt_path.absolute()}")
-    print(f"{'='*70}")
+                print(f"   {nome:<8}: {acc_recente:5.1f}% {seta} ({tendencia:+.1f}% vs total)")
 
-h_dict = {'5':0,'15':1,'30':2,'60':3,'300':4,'900':5,'1800':6,'3600':7,'18000':8,'86400':9}
+# =============================================================================
+# ANÁLISE POR MOEDA (visão geral)
+# =============================================================================
+
+def resumo_geral():
+    """Resumo geral de todas as moedas"""
+    
+    print("\n" + "=" * 70)
+    print("🎯 RESUMO GERAL - MELHORES HORIZONTES POR MOEDA")
+    print("=" * 70)
+    
+    pasta = "data/verificacoes"
+    if not os.path.exists(pasta):
+        return
+    
+    arquivos = sorted([f for f in os.listdir(pasta) if f.endswith('.json')])
+    ranking = []
+    
+    for arquivo in arquivos:
+        moeda = arquivo.replace('.json', '')
+        caminho = os.path.join(pasta, arquivo)
+        
+        try:
+            with open(caminho, 'r') as f:
+                dados = json.load(f)
+        except:
+            continue
+        
+        # Encontra o melhor horizonte para cada moeda
+        melhor_h = None
+        melhor_acc = 0
+        melhor_total = 0
+        
+        for h in dados:
+            d = dados[h]
+            total = d.get('total', 0)
+            if total >= 500:  # mínimo 500 trades
+                acc = (d.get('acertos', 0) / total) * 100
+                if acc > melhor_acc:
+                    melhor_acc = acc
+                    melhor_h = h
+                    melhor_total = total
+        
+        if melhor_h:
+            nome_h = _NOMES_H.get(int(melhor_h), f"{melhor_h}s")
+            ranking.append((moeda, nome_h, melhor_acc, melhor_total))
+    
+    ranking.sort(key=lambda x: x[2], reverse=True)
+    
+    print(f"\n{'Moeda':<12} {'Melhor H':<10} {'Acurácia':<12} {'Trades':<10}")
+    print(f"{'─' * 50}")
+    
+    for moeda, h, acc, total in ranking:
+        barra = "█" * int(acc / 10) + "░" * (10 - int(acc / 10))
+        print(f"{moeda:<12} {h:<10} {barra} {acc:5.1f}%  {total}")
+
+# =============================================================================
+# SIMULAÇÃO DE TRADES RECENTES
+# =============================================================================
+
+def simular_trades_recentes():
+    """Simula o resultado dos últimos 50 sinais de cada moeda"""
+    
+    print("\n" + "=" * 70)
+    print("🧪 SIMULAÇÃO - ÚLTIMOS 50 TRADES")
+    print("=" * 70)
+    
+    pasta = "data/verificacoes"
+    if not os.path.exists(pasta):
+        return
+    
+    arquivos = sorted([f for f in os.listdir(pasta) if f.endswith('.json')])
+    
+    for arquivo in arquivos:
+        moeda = arquivo.replace('.json', '')
+        caminho = os.path.join(pasta, arquivo)
+        
+        try:
+            with open(caminho, 'r') as f:
+                dados = json.load(f)
+        except:
+            continue
+        
+        print(f"\n💰 {moeda}:")
+        
+        for h in sorted(dados.keys(), key=int):
+            d = dados[h]
+            historico = d.get('historico', [])
+            
+            if len(historico) < 5000:
+                continue
+            
+            # Últimos 50 trades
+            ultimos = historico[-5000:]
+            acertos = sum(ultimos)
+            erros = len(ultimos) - acertos
+            acc = (acertos / len(ultimos)) * 100
+            
+            nome = _NOMES_H.get(int(h), f"{h}s")
+            
+            # Simula lucro com R/R 1:2
+            lucro_1_2 = acertos * 2 - erros * 1
+            
+            # Simula lucro com R/R 1:3
+            lucro_1_3 = acertos * 3 - erros * 1
+            
+            print(f"  {nome:<8}: {acertos}✅ {erros}❌ | {acc:5.1f}% | "
+                  f"Lucro 1:2 = {lucro_1_2:+d}R | Lucro 1:3 = {lucro_1_3:+d}R")
+
+# =============================================================================
+# TENDÊNCIAS (melhorando ou piorando?)
+# =============================================================================
+
+def analisar_tendencias():
+    """Analisa se o modelo está melhorando ou piorando"""
+    
+    print("\n" + "=" * 70)
+    print("📈 ANÁLISE DE TENDÊNCIAS (melhorando ou piorando?)")
+    print("=" * 70)
+    
+    pasta = "data/verificacoes"
+    if not os.path.exists(pasta):
+        return
+    
+    arquivos = sorted([f for f in os.listdir(pasta) if f.endswith('.json')])
+    
+    print(f"\n{'Moeda':<12} {'Horizonte':<10} {'Total':<10} {'Recente':<10} {'Tendência'}")
+    print(f"{'─' * 65}")
+    
+    for arquivo in arquivos:
+        moeda = arquivo.replace('.json', '')
+        caminho = os.path.join(pasta, arquivo)
+        
+        try:
+            with open(caminho, 'r') as f:
+                dados = json.load(f)
+        except:
+            continue
+        
+        for h in sorted(dados.keys(), key=int):
+            d = dados[h]
+            historico = d.get('historico', [])
+            total = d.get('total', 0)
+            
+            if total < 100 or len(historico) < 100:
+                continue
+            
+            # Divide em 3 partes: antigo, médio, recente
+            tercos = len(historico) // 3
+            if tercos < 30:
+                continue
+            
+            antigo = historico[:tercos]
+            medio = historico[tercos:2*tercos]
+            recente = historico[2*tercos:]
+            
+            acc_antigo = (sum(antigo) / len(antigo)) * 100
+            acc_medio = (sum(medio) / len(medio)) * 100
+            acc_recente = (sum(recente) / len(recente)) * 100
+            
+            # Tendência
+            if acc_recente > acc_medio > acc_antigo:
+                tendencia = "📈 MELHORANDO"
+            elif acc_recente < acc_medio < acc_antigo:
+                tendencia = "📉 PIORANDO"
+            elif acc_recente > acc_antigo:
+                tendencia = "↗️ RECUPERANDO"
+            elif acc_recente < acc_antigo:
+                tendencia = "↘️ CAINDO"
+            else:
+                tendencia = "➡️ ESTÁVEL"
+            
+            nome = _NOMES_H.get(int(h), f"{h}s")
+            
+            if abs(acc_recente - acc_antigo) > 3:  # só mostra mudanças significativas
+                print(f"{moeda:<12} {nome:<10} {acc_antigo:5.1f}%     {acc_recente:5.1f}%     {tendencia}")
+
+# =============================================================================
+# MAIN
+# =============================================================================
 
 if __name__ == "__main__":
-    inspecionar_mentes()
+    print("\n" + "💀" * 35)
+    print("🔮 SISTEMA DE VALIDAÇÃO DE PREVISÕES")
+    print("💀" * 35)
+    print(f"⏰ Executado em: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    # 1. Análise detalhada por moeda
+    analisar_json_verificacao()
+    
+    # 2. Resumo geral
+    resumo_geral()
+    
+    # 3. Simulação de trades recentes
+    simular_trades_recentes()
+    
+    # 4. Tendências
+    analisar_tendencias()
+    
+    print("\n" + "=" * 70)
+    print("💡 INTERPRETAÇÃO:")
+    print("   📈 MELHORANDO = O aprendizado está funcionando")
+    print("   📉 PIORANDO = Overfitting ou regime change")
+    print("   ➡️ ESTÁVEL = Modelo convergiu (bom ou ruim?)")
+    print("   🟢 >60% = Lucrativo com R/R adequado")
+    print("   💀 <45% = Melhor jogar moeda pro ar")
+    print("=" * 70)

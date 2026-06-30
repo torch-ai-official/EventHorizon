@@ -1,5 +1,5 @@
 {
-  "ultimo_id_global": 185,
+  "ultimo_id_global": 212,
   "mentes": {
     "922": {
       "id_agente": 922,
@@ -42,7 +42,7 @@
       ],
       "confidence": 0.7,
       "learning_stability": "desconhecida",
-      "tipo": "pytorch_v3_delayed_reward"
+      "tipo": "pytorch_v4_full_backprop"
     },
     "923": {
       "id_agente": 923,
@@ -85,7 +85,7 @@
       ],
       "confidence": 0.7,
       "learning_stability": "desconhecida",
-      "tipo": "pytorch_v3_delayed_reward"
+      "tipo": "pytorch_v4_full_backprop"
     },
     "924": {
       "id_agente": 924,
@@ -128,7 +128,7 @@
       ],
       "confidence": 0.7,
       "learning_stability": "desconhecida",
-      "tipo": "pytorch_v3_delayed_reward"
+      "tipo": "pytorch_v4_full_backprop"
     },
     "925": {
       "id_agente": 925,
@@ -171,7 +171,738 @@
       ],
       "confidence": 0.7,
       "learning_stability": "desconhecida",
-      "tipo": "pytorch_v3_delayed_reward"
+      "tipo": "pytorch_v4_full_backprop"
+    },
+    "926": {
+      "id_agente": 926,
+      "n_acertos": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "n_erros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "geracao": 1,
+      "accuracy_por_horizonte": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "confidence": 0.7,
+      "learning_stability": "desconhecida",
+      "tipo": "pytorch_v4_full_backprop"
+    },
+    "927": {
+      "id_agente": 927,
+      "n_acertos": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "n_erros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "geracao": 1,
+      "accuracy_por_horizonte": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "confidence": 0.7,
+      "learning_stability": "desconhecida",
+      "tipo": "pytorch_v4_full_backprop"
+    },
+    "928": {
+      "id_agente": 928,
+      "n_acertos": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "n_erros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "geracao": 1,
+      "accuracy_por_horizonte": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "confidence": 0.7,
+      "learning_stability": "desconhecida",
+      "tipo": "pytorch_v4_full_backprop"
+    },
+    "929": {
+      "id_agente": 929,
+      "n_acertos": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "n_erros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "geracao": 1,
+      "accuracy_por_horizonte": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "confidence": 0.7,
+      "learning_stability": "desconhecida",
+      "tipo": "pytorch_v4_full_backprop"
+    },
+    "930": {
+      "id_agente": 930,
+      "n_acertos": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "n_erros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "geracao": 1,
+      "accuracy_por_horizonte": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "confidence": 0.7,
+      "learning_stability": "desconhecida",
+      "tipo": "pytorch_v4_full_backprop"
+    },
+    "931": {
+      "id_agente": 931,
+      "n_acertos": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "n_erros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "geracao": 0,
+      "accuracy_por_horizonte": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "confidence": 0.7,
+      "learning_stability": "desconhecida",
+      "tipo": "pytorch_v4_full_backprop"
+    },
+    "932": {
+      "id_agente": 932,
+      "n_acertos": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "n_erros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "geracao": 1,
+      "accuracy_por_horizonte": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "confidence": 0.7,
+      "learning_stability": "desconhecida",
+      "tipo": "pytorch_v4_full_backprop"
+    },
+    "933": {
+      "id_agente": 933,
+      "n_acertos": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "n_erros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "geracao": 0,
+      "accuracy_por_horizonte": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "confidence": 0.7,
+      "learning_stability": "desconhecida",
+      "tipo": "pytorch_v4_full_backprop"
+    },
+    "934": {
+      "id_agente": 934,
+      "n_acertos": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "n_erros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "geracao": 1,
+      "accuracy_por_horizonte": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "confidence": 0.7,
+      "learning_stability": "desconhecida",
+      "tipo": "pytorch_v4_full_backprop"
+    },
+    "935": {
+      "id_agente": 935,
+      "n_acertos": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "n_erros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "geracao": 1,
+      "accuracy_por_horizonte": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "confidence": 0.7,
+      "learning_stability": "desconhecida",
+      "tipo": "pytorch_v4_full_backprop"
+    },
+    "936": {
+      "id_agente": 936,
+      "n_acertos": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "n_erros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "geracao": 1,
+      "accuracy_por_horizonte": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "confidence": 0.7,
+      "learning_stability": "desconhecida",
+      "tipo": "pytorch_v4_full_backprop"
+    },
+    "937": {
+      "id_agente": 937,
+      "n_acertos": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "n_erros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "geracao": 1,
+      "accuracy_por_horizonte": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "confidence": 0.7,
+      "learning_stability": "desconhecida",
+      "tipo": "pytorch_v4_full_backprop"
+    },
+    "938": {
+      "id_agente": 938,
+      "n_acertos": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "n_erros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "geracao": 1,
+      "accuracy_por_horizonte": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "confidence": 0.7,
+      "learning_stability": "desconhecida",
+      "tipo": "pytorch_v4_full_backprop"
+    },
+    "939": {
+      "id_agente": 939,
+      "n_acertos": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "n_erros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "geracao": 0,
+      "accuracy_por_horizonte": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "confidence": 0.7,
+      "learning_stability": "desconhecida",
+      "tipo": "pytorch_v4_full_backprop"
+    },
+    "940": {
+      "id_agente": 940,
+      "n_acertos": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "n_erros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "geracao": 0,
+      "accuracy_por_horizonte": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "confidence": 0.7,
+      "learning_stability": "desconhecida",
+      "tipo": "pytorch_v4_full_backprop"
+    },
+    "941": {
+      "id_agente": 941,
+      "n_acertos": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "n_erros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "geracao": 0,
+      "accuracy_por_horizonte": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "confidence": 0.7,
+      "learning_stability": "desconhecida",
+      "tipo": "pytorch_v4_full_backprop"
+    },
+    "942": {
+      "id_agente": 942,
+      "n_acertos": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "n_erros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "geracao": 0,
+      "accuracy_por_horizonte": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "confidence": 0.7,
+      "learning_stability": "desconhecida",
+      "tipo": "pytorch_v4_full_backprop"
     }
   }
 }
